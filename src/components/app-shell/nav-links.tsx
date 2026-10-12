@@ -5,10 +5,16 @@ import { usePathname } from "next/navigation";
 import {
   BookOpen,
   Briefcase,
+  CalendarRange,
+  ClipboardList,
   Contact,
+  FolderTree,
   GraduationCap,
   History,
   House,
+  Library,
+  School,
+  Search,
   Settings,
   Shield,
   Upload,
@@ -33,6 +39,12 @@ const ICONS: Record<NavIcon, LucideIcon> = {
   "user-cog": UserCog,
   contact: Contact,
   upload: Upload,
+  library: Library,
+  school: School,
+  folders: FolderTree,
+  "calendar-range": CalendarRange,
+  clipboard: ClipboardList,
+  search: Search,
 };
 
 /** The single best-matching item: exact match, else the longest href that prefixes the path.

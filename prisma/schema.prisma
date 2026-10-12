@@ -33,6 +33,46 @@ enum StudentStatus {
   WITHDRAWN
 }
 
+enum CourseStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum CourseVisibility {
+  /// Listed in the public catalog (when published).
+  CATALOG
+  /// Only reachable by enrolled members and staff.
+  PRIVATE
+}
+
+enum ClassStatus {
+  /// Being prepared: visible to staff only.
+  DRAFT
+  ACTIVE
+  /// Finished: read-only for students.
+  COMPLETED
+  ARCHIVED
+}
+
+enum ClassRole {
+  TEACHER
+  ASSISTANT
+  STUDENT
+}
+
+enum MembershipStatus {
+  ACTIVE
+  WITHDRAWN
+  COMPLETED
+}
+
+enum BoardPolicy {
+  STUDENTS_CAN_POST
+  COMMENT_ONLY
+  READ_ONLY
+}
+
 enum StudentDocumentType {
   ID_DOCUMENT
   TRANSCRIPT
@@ -70,6 +110,9 @@ model User {
   uploadedFiles  File[]
   documents      StudentDocument[] @relation("StudentDocuments")
   uploadedDocs   StudentDocument[] @relation("StudentDocumentUploader")
+  editedCourses  CourseEditor[]
+  createdCourses Course[]          @relation("CourseCreator")
+  memberships    ClassMember[]
 
   @@index([status])
   @@index([deletedAt])
@@ -213,6 +256,133 @@ model StudentDocument {
   @@map("student_documents")
 }
 
+// ───────────────────────── Academic structure ─────────────────────────
+
+model Category {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?  @db.Text
+  parentId    String?
+  position    Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children Category[] @relation("CategoryTree")
+  courses  Course[]
+
+  @@index([parentId])
+  @@map("categories")
+}
+
+model AcademicTerm {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  startDate DateTime @db.Date
+  endDate   DateTime @db.Date
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  classes Class[]
+
+  @@index([startDate])
+  @@map("academic_terms")
+}
+
+/// The catalog item and syllabus template. Content (units/entries) arrives in phase 4.
+model Course {
+  id          String           @id @default(cuid())
+  code        String           @unique
+  title       String
+  slug        String           @unique
+  /// One or two sentences for cards and the catalog.
+  summary     String?          @db.VarChar(300)
+  /// Plain text for now; rich text arrives with the content engine (phase 4).
+  description String?          @db.Text
+  level       String?
+  categoryId  String?
+  coverFileId String?          @unique
+  status      CourseStatus     @default(DRAFT)
+  visibility  CourseVisibility @default(CATALOG)
+  /// Signed-in students may enroll themselves from the catalog.
+  selfEnroll  Boolean          @default(false)
+  createdById String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  category  Category?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  coverFile File?          @relation(fields: [coverFileId], references: [id], onDelete: SetNull)
+  createdBy User?          @relation("CourseCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  editors   CourseEditor[]
+  classes   Class[]
+
+  @@index([status, visibility])
+  @@index([categoryId])
+  @@map("courses")
+}
+
+/// Teachers who may edit a course's content.
+model CourseEditor {
+  courseId  String
+  userId    String
+  createdAt DateTime @default(now())
+
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([courseId, userId])
+  @@index([userId])
+  @@map("course_editors")
+}
+
+/// One delivery of a course to a group (own dates, staff and students).
+model Class {
+  id          String      @id @default(cuid())
+  courseId    String
+  termId      String?
+  name        String
+  code        String      @unique
+  startDate   DateTime?   @db.Date
+  endDate     DateTime?   @db.Date
+  /// Max ACTIVE students; null = unlimited.
+  capacity    Int?
+  status      ClassStatus @default(DRAFT)
+  boardPolicy BoardPolicy @default(STUDENTS_CAN_POST)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  course  Course        @relation(fields: [courseId], references: [id], onDelete: Restrict)
+  term    AcademicTerm? @relation(fields: [termId], references: [id], onDelete: SetNull)
+  members ClassMember[]
+
+  @@index([courseId])
+  @@index([termId])
+  @@index([status])
+  @@map("classes")
+}
+
+/// Class staff and students. One row per person per class; history is kept via status/endedAt.
+model ClassMember {
+  id         String           @id @default(cuid())
+  classId    String
+  userId     String
+  role       ClassRole
+  status     MembershipStatus @default(ACTIVE)
+  enrolledAt DateTime         @default(now())
+  endedAt    DateTime?
+  /// e.g. "Moved to MATH-101-B", "Withdrawn at parent's request".
+  note       String?
+
+  class Class @relation(fields: [classId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([classId, userId])
+  @@index([userId, status])
+  @@index([classId, role, status])
+  @@map("class_members")
+}
+
 // ───────────────────────── Files ─────────────────────────
 
 /// A stored blob. Access is decided by what references it (see src/features/files/access.ts).
@@ -227,6 +397,7 @@ model File {
 
   owner           User?            @relation(fields: [ownerId], references: [id], onDelete: SetNull)
   studentDocument StudentDocument?
+  courseCover     Course?
 
   @@index([ownerId])
   @@map("files")

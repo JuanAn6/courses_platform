@@ -13,13 +13,20 @@ export type NavIcon =
   | "users"
   | "user-cog"
   | "contact"
-  | "upload";
+  | "upload"
+  | "library"
+  | "school"
+  | "folders"
+  | "calendar-range"
+  | "clipboard"
+  | "search";
 
 export type NavItem = { href: string; label: string; icon: NavIcon };
 export type NavSection = { title: string; items: NavItem[] };
 
 const GENERAL: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: "home" },
+  { href: "/catalog", label: "Catalog", icon: "search" },
   { href: "/profile", label: "Profile", icon: "user" },
 ];
 
@@ -28,15 +35,20 @@ const AREA_ITEMS: Record<Area, NavItem[]> = {
   admin: [
     { href: "/admin", label: "Overview", icon: "shield" },
     { href: "/admin/users", label: "Users", icon: "user-cog" },
+    { href: "/admin/courses", label: "Courses", icon: "library" },
+    { href: "/admin/classes", label: "Classes", icon: "school" },
+    { href: "/admin/categories", label: "Categories", icon: "folders" },
+    { href: "/admin/terms", label: "Terms", icon: "calendar-range" },
     { href: "/admin/settings", label: "Settings", icon: "settings" },
     { href: "/admin/audit-log", label: "Audit log", icon: "history" },
   ],
   office: [
     { href: "/office", label: "Overview", icon: "briefcase" },
     { href: "/office/students", label: "Students", icon: "contact" },
+    { href: "/office/enrollments", label: "Enrollments", icon: "clipboard" },
     { href: "/office/students/import", label: "Import students", icon: "upload" },
   ],
-  teach: [{ href: "/teach", label: "Overview", icon: "graduation" }],
+  teach: [{ href: "/teach", label: "My classes", icon: "graduation" }],
   learn: [{ href: "/learn", label: "My classes", icon: "book" }],
   guardian: [{ href: "/guardian", label: "My students", icon: "users" }],
 };

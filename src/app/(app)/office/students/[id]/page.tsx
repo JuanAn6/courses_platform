@@ -8,15 +8,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/page-header";
 import { UserStatusBadge } from "@/components/status-badges";
+import { getStudentEnrollments, listEnrollableClasses } from "@/features/academics/queries";
 import { getSettings } from "@/features/settings/queries";
 import { getStudentRecord } from "@/features/students/queries";
 import { STUDENT_STATUS_LABELS } from "@/features/students/schemas";
 import { hasPermission } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
-import { formatDateTime } from "@/lib/format";
+import { formatDate, formatDateTime } from "@/lib/format";
 import { AccountPanel } from "./account-panel";
 import { DocumentsPanel } from "./documents-panel";
 import { EditStudentForm } from "./edit-student-form";
+import { EnrollmentsPanel } from "./enrollments-panel";
 import { GuardiansPanel } from "./guardians-panel";
 
 export const metadata: Metadata = { title: "Student record" };
@@ -24,7 +26,13 @@ export const metadata: Metadata = { title: "Student record" };
 export default async function StudentRecordPage({ params }: PageProps<"/office/students/[id]">) {
   const actor = await requirePermission("students.viewSensitive");
   const { id } = await params;
-  const [student, { timezone }] = await Promise.all([getStudentRecord(id), getSettings("general")]);
+  const canEnroll = hasPermission(actor.roles, "enrollments.manage");
+  const [student, { timezone }, enrollments, classes] = await Promise.all([
+    getStudentRecord(id),
+    getSettings("general"),
+    getStudentEnrollments(id),
+    canEnroll ? listEnrollableClasses() : Promise.resolve([]),
+  ]);
   if (!student?.studentProfile) notFound();
   const profile = student.studentProfile;
 
@@ -44,6 +52,7 @@ export default async function StudentRecordPage({ params }: PageProps<"/office/s
       <Tabs defaultValue="profile">
         <TabsList className="mb-4">
           <TabsTrigger value="profile">Profile</TabsTrigger>
+          <TabsTrigger value="enrollments">Enrollments ({enrollments.filter((e) => e.status === "ACTIVE").length})</TabsTrigger>
           <TabsTrigger value="guardians">Guardians ({student.guardians.length})</TabsTrigger>
           <TabsTrigger value="documents">Documents ({student.documents.length})</TabsTrigger>
           <TabsTrigger value="account">Account</TabsTrigger>
@@ -63,6 +72,29 @@ export default async function StudentRecordPage({ params }: PageProps<"/office/s
               />
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="enrollments">
+          <EnrollmentsPanel
+            studentId={student.id}
+            canEnroll={canEnroll}
+            enrollments={enrollments.map((e) => ({
+              classId: e.class.id,
+              className: e.class.name,
+              classCode: e.class.code,
+              courseTitle: e.class.course.title,
+              term: e.class.term?.name ?? null,
+              status: e.status,
+              since: formatDate(e.enrolledAt, timezone),
+              ended: e.endedAt ? formatDate(e.endedAt, timezone) : null,
+              note: e.note,
+            }))}
+            classes={classes.map((k) => ({
+              id: k.id,
+              label: `${k.course.title} — ${k.name} (${k.code})`,
+              full: k.capacity !== null && k._count.members >= k.capacity,
+            }))}
+          />
         </TabsContent>
 
         <TabsContent value="guardians">

@@ -18,6 +18,7 @@ The UI is English only. Cache Components is off, so pages render per request.
 - Client forms use `useActionForm(action, initial)` and render `<form action={formAction} onSubmit={onSubmit}>`, which keeps input after errors.
   - For destructive or one-off actions, use `<ConfirmButton run={() => cmd(args)} …/>`.
   - Form-field helpers (`optionalText`, `optionalDate`, `checkbox`, `formArray`) are in `src/lib/zod.ts`.
+  - Use `useActionToast(state, onSuccess?)` for result toasts; it fires once per result.
 - Pages and layouts guard themselves with `requireUser`, `requireArea` or `requirePermission` from `src/lib/auth/session.ts`. Area layouts guard too, but **every page also checks**, because layouts don't re-run on client navigation. `proxy.ts` is only an optimistic cookie check.
 - Roles and permissions live in `src/lib/auth/permissions.ts`, a pure module that can be unit-tested. Add a permission key there rather than checking roles inline.
 - Mutations on important data call `audit()` (`src/lib/audit.ts`), passing `tx` inside transactions. Updates record `diffObjects(before, after)`.
@@ -29,6 +30,8 @@ The UI is English only. Cache Components is off, so pages render per request.
 - Never send quiz answers or sensitive student fields (medical notes, documents) to unauthorized users.
 - Files are stored through `storage` (`src/lib/storage.ts`) and served only by `/api/files/[id]`. Add an access rule to `src/features/files/access.ts` for every new thing that references files.
 - Account emails (invites, resets) go through `src/features/accounts/`. Never store raw tokens.
+- Class pages guard with `requireClassStaff(classId)` or `requireClassViewer(classId)` (`src/features/academics/access.ts`). The pure rules are in `src/features/academics/rules.ts`.
+- Enrollment writes go through `src/features/academics/enrollment-service.ts`, which locks the class row before checking capacity.
 - Before any transaction that may create a student, call `ensureStudentCodeSequence()`. Counters in `sequences` are incremented with raw SQL (see `service.ts`).
 
 ## Dev

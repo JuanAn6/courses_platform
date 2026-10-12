@@ -28,6 +28,7 @@ export function ConfirmButton<T>({
   confirmLabel,
   variant = "outline",
   destructive = false,
+  disabled = false,
   onSuccess,
 }: {
   run: () => Promise<ActionState<T>>;
@@ -37,6 +38,7 @@ export function ConfirmButton<T>({
   confirmLabel: string;
   variant?: React.ComponentProps<typeof Button>["variant"];
   destructive?: boolean;
+  disabled?: boolean;
   onSuccess?: (data: T | undefined) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -45,7 +47,7 @@ export function ConfirmButton<T>({
   return (
     <AlertDialog open={open} onOpenChange={setOpen}>
       <AlertDialogTrigger asChild>
-        <Button variant={variant} disabled={pending}>
+        <Button variant={variant} disabled={pending || disabled}>
           {label}
         </Button>
       </AlertDialogTrigger>

@@ -97,12 +97,144 @@ async function main() {
     });
   }
 
+  await seedAcademics(staff, studentIds);
+
   await db.auditLog.create({
     data: { action: "seed.run", entityType: "System", diff: { users: STAFF.length + STUDENT_NAMES.length } },
   });
 
-  console.log(`Seeded ${STAFF.length} staff/guardian accounts and ${STUDENT_NAMES.length} students.`);
+  console.log(`Seeded ${STAFF.length} staff/guardian accounts, ${STUDENT_NAMES.length} students, 3 courses and 3 classes.`);
   console.log(`Sign in with e.g. admin@school.test / ${PASSWORD}`);
+}
+
+/** Categories, a term, three courses and three classes with staff and students. */
+async function seedAcademics(staff: Map<string, string>, studentIds: string[]) {
+  const category = async (slug: string, name: string) =>
+    db.category.upsert({ where: { slug }, create: { slug, name }, update: { name } });
+  const [math, languages, sciences] = await Promise.all([
+    category("mathematics", "Mathematics"),
+    category("languages", "Languages"),
+    category("sciences", "Sciences"),
+  ]);
+
+  const term = await db.academicTerm.upsert({
+    where: { name: "2026 Fall" },
+    create: { name: "2026 Fall", startDate: new Date("2026-08-03"), endDate: new Date("2026-12-11") },
+    update: {},
+  });
+
+  const course = async (data: {
+    code: string;
+    title: string;
+    slug: string;
+    summary: string;
+    description: string;
+    level: string;
+    categoryId: string;
+    status: "DRAFT" | "PUBLISHED";
+    selfEnroll: boolean;
+    editor: string;
+  }) => {
+    const { editor, ...fields } = data;
+    const c = await db.course.upsert({ where: { code: data.code }, create: fields, update: fields });
+    const userId = staff.get(editor)!;
+    await db.courseEditor.upsert({
+      where: { courseId_userId: { courseId: c.id, userId } },
+      create: { courseId: c.id, userId },
+      update: {},
+    });
+    return c;
+  };
+
+  const algebra = await course({
+    code: "MATH-101",
+    title: "Algebra I",
+    slug: "algebra-i",
+    summary: "Equations, functions and graphs: the foundations of algebra.",
+    description:
+      "Learn to solve linear equations and inequalities, work with functions, and read graphs.\n\nPrerequisites: arithmetic with fractions and negative numbers.",
+    level: "Grade 8",
+    categoryId: math.id,
+    status: "PUBLISHED",
+    selfEnroll: false,
+    editor: "teacher1@school.test",
+  });
+  const spanish = await course({
+    code: "LANG-110",
+    title: "Spanish for Beginners",
+    slug: "spanish-for-beginners",
+    summary: "Everyday conversation, pronunciation and basic grammar.",
+    description: "A friendly introduction to Spanish with weekly conversation practice.\n\nNo prior knowledge required.",
+    level: "A1",
+    categoryId: languages.id,
+    status: "PUBLISHED",
+    selfEnroll: true,
+    editor: "teacher2@school.test",
+  });
+  const biology = await course({
+    code: "SCI-120",
+    title: "Biology Basics",
+    slug: "biology-basics",
+    summary: "Cells, genetics and ecosystems.",
+    description: "Still being prepared.",
+    level: "Grade 9",
+    categoryId: sciences.id,
+    status: "DRAFT",
+    selfEnroll: false,
+    editor: "teacher2@school.test",
+  });
+
+  const klass = async (data: {
+    code: string;
+    name: string;
+    courseId: string;
+    status: "DRAFT" | "ACTIVE";
+    capacity: number | null;
+    members: { userId: string; role: "TEACHER" | "ASSISTANT" | "STUDENT" }[];
+  }) => {
+    const { members, ...fields } = data;
+    const values = { ...fields, termId: term.id, startDate: term.startDate, endDate: term.endDate };
+    const k = await db.class.upsert({ where: { code: data.code }, create: values, update: values });
+    for (const m of members) {
+      await db.classMember.upsert({
+        where: { classId_userId: { classId: k.id, userId: m.userId } },
+        create: { classId: k.id, ...m },
+        update: { role: m.role, status: "ACTIVE", endedAt: null, note: null },
+      });
+    }
+    return k;
+  };
+  const students = (from: number, to: number) =>
+    studentIds.slice(from - 1, to).map((userId) => ({ userId, role: "STUDENT" as const }));
+
+  await klass({
+    code: "MATH-101-26F-A",
+    name: "Algebra I · Group A",
+    courseId: algebra.id,
+    status: "ACTIVE",
+    capacity: 25,
+    members: [
+      { userId: staff.get("teacher1@school.test")!, role: "TEACHER" },
+      { userId: staff.get("assistant@school.test")!, role: "ASSISTANT" },
+      ...students(1, 6),
+    ],
+  });
+  await klass({
+    code: "LANG-110-26F",
+    name: "Spanish for Beginners · Fall",
+    courseId: spanish.id,
+    status: "ACTIVE",
+    capacity: 20,
+    members: [{ userId: staff.get("teacher2@school.test")!, role: "TEACHER" }, ...students(4, 8)],
+  });
+  await klass({
+    code: "SCI-120-26F",
+    name: "Biology · Fall",
+    courseId: biology.id,
+    status: "DRAFT",
+    capacity: null,
+    members: [{ userId: staff.get("teacher2@school.test")!, role: "TEACHER" }],
+  });
 }
 
 main()

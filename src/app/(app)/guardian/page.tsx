@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Users } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { requireArea } from "@/lib/auth/session";
@@ -15,7 +15,17 @@ export default async function GuardianOverviewPage() {
   const links = await db.guardianLink.findMany({
     where: { guardianId: user.id, student: { deletedAt: null } },
     include: {
-      student: { select: { id: true, name: true, studentProfile: { select: { studentCode: true } } } },
+      student: {
+        select: {
+          id: true,
+          name: true,
+          studentProfile: { select: { studentCode: true } },
+          memberships: {
+            where: { role: "STUDENT", status: "ACTIVE", class: { status: { in: ["ACTIVE", "COMPLETED"] } } },
+            select: { class: { select: { id: true, name: true, course: { select: { title: true } } } } },
+          },
+        },
+      },
     },
     orderBy: { student: { name: "asc" } },
   });
@@ -45,6 +55,20 @@ export default async function GuardianOverviewPage() {
                   </CardDescription>
                 </div>
               </CardHeader>
+              <CardContent>
+                <p className="mb-1 text-sm text-muted-foreground">Classes</p>
+                {student.memberships.length === 0 ? (
+                  <p className="text-sm">Not enrolled in any class.</p>
+                ) : (
+                  <ul className="grid gap-1 text-sm">
+                    {student.memberships.map(({ class: k }) => (
+                      <li key={k.id}>
+                        {k.course.title} <span className="text-muted-foreground">· {k.name}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </CardContent>
             </Card>
           ))}
         </div>

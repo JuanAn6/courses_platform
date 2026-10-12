@@ -13,7 +13,7 @@
 
 This file holds all the context needed to build it. `CLAUDE.md` at the repo root summarizes the conventions.
 
-**Status:** Phases 1 (Foundation) and 2 (People management) are done. See §6 for what it includes and §9 for changes from the original plan.
+**Status:** Phases 1 (Foundation), 2 (People management) and 3 (Academic structure) are done. See §6 for what it includes and §9 for changes from the original plan.
 
 **Decisions made with the user:** Next.js full-stack, **MySQL**, single institution, **English-only UI** (strings kept in one place so i18n can be added later), and all four extras: gradebook and certificates, attendance and calendar, messaging and notifications, and payments.
 
@@ -246,7 +246,7 @@ src/app/
 2. **People management** ✅ *done*
    - Admin user CRUD and invites.
    - Secretary student records, documents, guardians, CSV import.
-3. **Academic structure**
+3. **Academic structure** ✅ *done*
    - Categories, courses, terms, classes, class members, enrollments, catalog.
 4. **Content engine**
    - File uploads (presigned S3) and conversion worker.
@@ -372,3 +372,51 @@ src/app/
 - **Tests:**
   - Unit tests for tokens, account rules, student codes, CSV parsing and export safety, file-name sanitizing, and form Zod helpers.
   - E2E tests for invite → activate, form errors, suspend/reactivate/reset, impersonation, self-lockout, the full student record with document access control, CSV import, and export with role checks.
+
+### Phase 3 decisions
+- **Statuses instead of deletion.** Courses use DRAFT / PUBLISHED / ARCHIVED and classes use DRAFT / ACTIVE / COMPLETED / ARCHIVED. Archiving replaces soft-delete (`deletedAt`) for courses and classes.
+  - Categories and terms can be deleted only when empty.
+- **Who sees a class** (`classAccess` in `src/features/academics/rules.ts`):
+  - Staff (teachers and assistants with an ACTIVE membership) and admins see the class in any status.
+  - Students see only ACTIVE and COMPLETED classes, and keep read access once their membership is COMPLETED.
+  - Pages use `requireClassStaff` (`/teach/classes/[id]`) or `requireClassViewer` (`/learn/classes/[id]`).
+  - Outsiders are sent to `/forbidden`.
+- **Memberships:** `ClassMember` keeps one row per person per class, holding role TEACHER, ASSISTANT or STUDENT.
+  - History is kept through status (ACTIVE / WITHDRAWN / COMPLETED), `endedAt` and `note` (e.g. "Moved to SCI-120-26F").
+  - Re-enrolling reactivates the same row.
+  - Class roles require the matching global role (`canHoldClassRole`): Teacher for TEACHER, Teacher or Assistant for ASSISTANT, Student for STUDENT.
+- **Capacity:** every enrollment transaction locks the class row (`SELECT … FOR UPDATE`, in id order when moving between classes) before counting seats.
+  - `npm run script -- scripts/check-class-capacity.mts` runs 10 concurrent enrollments into a 3-seat class and expects exactly 3 to succeed.
+- **Course editors** (`CourseEditor`) are the teachers who will edit content in phase 4. Admins can always edit.
+- **Catalog:** `/catalog` and `/catalog/[slug]` are public.
+  - They list PUBLISHED + CATALOG courses and their ACTIVE classes.
+  - Signed-in users see the catalog inside the app shell.
+  - Self-enrollment is limited to signed-in STUDENT accounts with an ACTIVE student profile, on courses with `selfEnroll` and classes with free seats.
+  - Paid enrollment arrives with payments (phase 11). Public self-registration is not offered yet.
+- **Course descriptions** are plain text for now and become rich text with the content engine.
+- **Cover images** are public only for catalog courses and visible to any signed-in user otherwise (`canReadFile`).
+- **Cloning:**
+  - A course clone copies its details and editors as a new DRAFT. Content is copied once phase 4 exists.
+  - A class clone copies the course, staff, capacity and board policy as a new DRAFT, without students.
+- **Not built yet:** class schedules and sessions are left to phase 9 (attendance & calendar), and final grades to phase 8.
+
+### Phase 3 deliverables (for reference)
+- **Admin:**
+  - `/admin/categories`: nested categories.
+  - `/admin/terms`.
+  - `/admin/courses`: list, new, detail (details form, cover upload, editors, classes, duplicate).
+  - `/admin/classes`: list, new, detail (details form, staff, student summary, duplicate for a new term, "Open as teacher").
+- **Office:**
+  - `/office/enrollments`: pick a class, enroll several students (with search), withdraw several, move to another class, past students.
+  - The student record has an Enrollments tab with history, enroll and withdraw.
+- **Teacher:** `/teach` (my classes, courses I edit) and `/teach/classes/[id]` (roster, staff).
+- **Student:** `/learn` (class cards) and `/learn/classes/[id]` (class home: about, teachers, dates; lessons arrive in phase 4).
+- **Guardian:** each linked student's current classes.
+- **Public:** `/catalog` with search and category filter, and `/catalog/[slug]` with classes, seats and an enroll button.
+- **Seed:** 3 categories, the "2026 Fall" term, and 3 courses: Algebra I (published, office enrollment), Spanish for Beginners (published, self-enroll) and Biology Basics (draft).
+  - Algebra I · Group A: teacher1, the assistant and students 01–06.
+  - Spanish · Fall: teacher2 and students 04–08.
+  - Biology · Fall: draft.
+- **Tests:**
+  - Unit tests for slugs, class access, enrollment, self-enroll and class-role rules.
+  - E2E tests for building a course and class, validation, office enrollment (capacity, withdraw, move, history), the public catalog and self-enrollment, and class access limits.
