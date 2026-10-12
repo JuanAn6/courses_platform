@@ -56,3 +56,6 @@ next-env.d.ts
 
 # local editor tasks
 .vscode/tasks.json
+
+# copied at install time
+/public/pdf.worker.min.mjs

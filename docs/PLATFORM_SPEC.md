@@ -13,7 +13,7 @@
 
 This file holds all the context needed to build it. `CLAUDE.md` at the repo root summarizes the conventions.
 
-**Status:** Phases 1 (Foundation), 2 (People management) and 3 (Academic structure) are done. See §6 for what it includes and §9 for changes from the original plan.
+**Status:** Phases 1–4 (Foundation, People management, Academic structure, Content engine) are done. See §6 for what it includes and §9 for changes from the original plan.
 
 **Decisions made with the user:** Next.js full-stack, **MySQL**, single institution, **English-only UI** (strings kept in one place so i18n can be added later), and all four extras: gradebook and certificates, attendance and calendar, messaging and notifications, and payments.
 
@@ -248,7 +248,7 @@ src/app/
    - Secretary student records, documents, guardians, CSV import.
 3. **Academic structure** ✅ *done*
    - Categories, courses, terms, classes, class members, enrollments, catalog.
-4. **Content engine**
+4. **Content engine** ✅ *done*
    - File uploads (presigned S3) and conversion worker.
    - Unit/Entry builder, entry registry with TEXT, VIDEO, DOCUMENT, PRESENTATION, LINK/EMBED, AUDIO.
    - Players, progress tracking, release/override logic.
@@ -420,3 +420,66 @@ src/app/
 - **Tests:**
   - Unit tests for slugs, class access, enrollment, self-enroll and class-role rules.
   - E2E tests for building a course and class, validation, office enrollment (capacity, withdraw, move, history), the public catalog and self-enrollment, and class access limits.
+
+### Phase 4 decisions
+- **Entry types built:** TEXT, VIDEO, AUDIO, DOCUMENT, PRESENTATION, LINK and EMBED.
+  - LINK and EMBED are separate types. The rest are added with their phases.
+  - The registry (`src/features/entries/registry.ts`, pure) defines each type's content schema, what it needs before publishing, the files it references, its upload kind and how progress is tracked.
+  - Editors and viewers live in `components/editors.tsx` and `components/viewers.tsx`.
+- **Rich text:**
+  - Edited with Tiptap 3 (starter kit + image).
+  - Stored as JSON and whitelisted on save by `sanitizeDoc`. Links must be https, mailto or relative; images must be `/api/files/<id>` or https.
+  - Rendered on the server with `@tiptap/static-renderer` (React elements, no raw HTML).
+  - Math (KaTeX) is not built yet.
+- **Where content lives:**
+  - Course units have `classId` null. Class-only units have `classId` set and come after the course units.
+  - Class-only *entries* inside course units are not supported; use a class-only unit.
+  - Per-class overrides (`UnitClassOverride`, `EntryClassOverride`) can hide content or change release and due dates.
+- **What students see:** `buildOutline` (pure, `outline.ts`) combines status, overrides, release dates (unit and entry; the later date wins), unit prerequisites (all required, visible entries of the prerequisite unit completed) and progress.
+  - The player route re-checks the outline, so locked entries redirect back to the class.
+- **Uploads:**
+  - `POST /api/uploads?kind=…` streams the raw body to storage with per-kind MIME and size limits (video 1 GB, audio 200 MB, presentation 100 MB, document 50 MB, image 10 MB).
+  - It uses a route handler, not a Server Action, so the action body limit doesn't apply.
+  - Only ADMIN and TEACHER may upload. Uploaded files are private to the uploader until an entry references them (`EntryFile`).
+  - On save, attachments must belong to the editor or already be used in the same course.
+- **File access** (`canReadFile`):
+  - Entry files are visible to admins, course editors and class staff.
+  - Students can see them when they belong to a class that includes the entry and it is published, not hidden and released.
+  - Renditions (`File.sourceId`) follow their source file.
+  - `/api/files/[id]` supports HTTP range requests (video seeking). Media, images and PDFs are served inline; `?download=1` forces a download.
+- **PowerPoint → PDF** uses LibreOffice headless (`SOFFICE_PATH`, auto-detected).
+  - It runs in-process after the response (`after()`), one conversion at a time, with a private profile per run.
+  - Status and error are kept on `File.status` / `File.derived`.
+  - The editor polls `/api/files/[id]/status` and offers a retry.
+  - Without Redis, nothing re-queues work after a restart; the retry button covers it. A BullMQ worker can replace `enqueuePdfConversion` later.
+- **Video:** MP4 and WebM files play directly, with no HLS because ffmpeg isn't available. YouTube and Vimeo links use privacy-friendly embeds.
+- **PDFs** are rendered with react-pdf / pdf.js. The worker is copied to `public/pdf.worker.min.mjs` by `postinstall`.
+- **Progress** (`EntryProgress`, one row per student, entry and class):
+  - **Manual** (text, documents, embeds, linked video and slides): "Mark as done", which can be undone.
+  - **Link:** opening it completes it.
+  - **Media:** completes once the furthest point played reaches the entry's threshold (default 90%).
+  - **Pages** (uploaded slides): completes on reaching the last slide.
+  - Completed entries never go back automatically. Time spent is capped at 120 s per report.
+  - Staff previews and COMPLETED classes record nothing.
+- **Dates:** release and due dates are typed in the institution's time zone and stored in UTC (`src/lib/timezone.ts`).
+- **Reordering** sends the full order, and the server appends items the client didn't know about (`completeOrder`), so concurrent edits never produce duplicate positions.
+- **Deletes:** units and entries are soft-deleted (`deletedAt`). Files are not removed yet; a cleanup job comes later.
+- **Course duplication** now copies course-level units and entries, sharing the same files.
+
+### Phase 4 deliverables (for reference)
+- **Teacher:**
+  - `/teach/courses/[courseId]`: course builder with units and entries, drag and drop plus up/down buttons, unit settings (intro, release date, prerequisite), add content by type and delete.
+  - `/teach/entries/[entryId]`: entry editor with type-specific editor, publishing (status, required, available from, due), move to unit, delete, and a preview of unsaved changes.
+  - `/teach/classes/[id]`: Overview tab (roster with progress and last activity) and Content tab (per-class hide/date adjustments with "use course settings", class-only units). Assistants are view-only.
+- **Student:**
+  - `/learn`: class cards with progress.
+  - `/learn/classes/[id]`: outline with progress bar, unit and entry states (done, in progress, locked with reason, overdue), and Start/Continue.
+  - `/learn/classes/[id]/entries/[entryId]`: player with completion bar and previous/next.
+- **APIs:** `/api/uploads`, `/api/files/[id]` (range), `/api/files/[id]/status`.
+- **Seed:**
+  - Algebra I: Unit 1 (text, YouTube video, PDF cheat sheet, optional link) and Unit 2 (PDF slides, text), with Unit 2 requiring Unit 1.
+  - Spanish: one unit with text and an embed.
+  - The demo PDFs are generated by `prisma/seed-content.ts`.
+- **Tests:**
+  - Unit tests for time zones, embeds, rich-text sanitizing, the registry, the outline, range parsing and ordering.
+  - E2E tests for building and reordering, publish validation, PowerPoint conversion to slides, the student path through prerequisites and progress (including the teacher roster), class overrides and assistant view-only, class-only units and builder permissions, unit deletion, and course duplication with content.

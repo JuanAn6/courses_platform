@@ -32,6 +32,11 @@ The UI is English only. Cache Components is off, so pages render per request.
 - Account emails (invites, resets) go through `src/features/accounts/`. Never store raw tokens.
 - Class pages guard with `requireClassStaff(classId)` or `requireClassViewer(classId)` (`src/features/academics/access.ts`). The pure rules are in `src/features/academics/rules.ts`.
 - Enrollment writes go through `src/features/academics/enrollment-service.ts`, which locks the class row before checking capacity.
+- Content: entry types are defined in `src/features/entries/registry.ts`, with editors in `components/editors.tsx` and viewers in `components/viewers.tsx`. A new type touches the Prisma enum, the registry and both maps.
+- What a student can see or open is decided only by `buildOutline` (`src/features/entries/outline.ts`). File access goes through `canViewEntryContent`.
+- Rich text is Tiptap JSON. Always save through `prepareContent` (whitelists it) and render with `RichTextView`, never as raw HTML.
+- Uploads go through `POST /api/uploads?kind=` (streams to storage, limits in `UPLOAD_RULES`). Entries reference files via `EntryFile`.
+- Dates typed by users are wall-clock times in the institution's time zone. Convert with `zonedInputToUtc` / `utcToZonedInput`.
 - Before any transaction that may create a student, call `ensureStudentCodeSequence()`. Counters in `sequences` are incremented with raw SQL (see `service.ts`).
 
 ## Dev

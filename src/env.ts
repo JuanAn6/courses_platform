@@ -11,6 +11,8 @@ const envSchema = z.object({
   MAIL_FROM: z.string().default("Course Platform <no-reply@localhost>"),
   /** Local file storage root (S3-compatible storage arrives in phase 4). */
   STORAGE_DIR: z.string().default("./storage"),
+  /** LibreOffice binary for PowerPoint → PDF conversion. Auto-detected when unset. */
+  SOFFICE_PATH: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

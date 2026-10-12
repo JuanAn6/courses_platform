@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, ExternalLink, Plus } from "lucide-react";
+import { ArrowLeft, ExternalLink, LayoutList, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/page-header";
@@ -35,11 +35,16 @@ export default async function CourseDetailPage({ params }: PageProps<"/admin/cou
         title={course.title}
         description={course.code}
         actions={
-          isPublic ? (
+          <>
             <Button variant="outline" asChild>
-              <Link href={`/catalog/${course.slug}`}><ExternalLink /> View in catalog</Link>
+              <Link href={`/teach/courses/${course.id}`}><LayoutList /> Edit content</Link>
             </Button>
-          ) : undefined
+            {isPublic ? (
+              <Button variant="outline" asChild>
+                <Link href={`/catalog/${course.slug}`}><ExternalLink /> View in catalog</Link>
+              </Button>
+            ) : null}
+          </>
         }
       />
       <div className="mb-6"><CourseStatusBadge status={course.status} /></div>
@@ -112,7 +117,7 @@ export default async function CourseDetailPage({ params }: PageProps<"/admin/cou
           <Card>
             <CardHeader>
               <CardTitle>Duplicate</CardTitle>
-              <CardDescription>Copies details and editors into a new draft course. Classes aren&apos;t copied.</CardDescription>
+              <CardDescription>Copies details, editors and content (units and lessons) into a new draft course. Classes aren&apos;t copied.</CardDescription>
             </CardHeader>
             <CardContent>
               <CloneCourseForm courseId={course.id} title={course.title} />

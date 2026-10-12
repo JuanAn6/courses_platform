@@ -73,6 +73,34 @@ enum BoardPolicy {
   READ_ONLY
 }
 
+/// Content types. Each has a Zod content schema, an editor and a viewer (src/features/entries/registry.ts).
+enum EntryType {
+  TEXT
+  VIDEO
+  AUDIO
+  DOCUMENT
+  PRESENTATION
+  LINK
+  EMBED
+}
+
+enum PublishStatus {
+  DRAFT
+  PUBLISHED
+}
+
+enum ProgressStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum FileStatus {
+  READY
+  PROCESSING
+  FAILED
+}
+
 enum StudentDocumentType {
   ID_DOCUMENT
   TRANSCRIPT
@@ -113,6 +141,8 @@ model User {
   editedCourses  CourseEditor[]
   createdCourses Course[]          @relation("CourseCreator")
   memberships    ClassMember[]
+  createdEntries Entry[]           @relation("EntryCreator")
+  entryProgress  EntryProgress[]
 
   @@index([status])
   @@index([deletedAt])
@@ -316,6 +346,7 @@ model Course {
   createdBy User?          @relation("CourseCreator", fields: [createdById], references: [id], onDelete: SetNull)
   editors   CourseEditor[]
   classes   Class[]
+  units     Unit[]
 
   @@index([status, visibility])
   @@index([categoryId])
@@ -352,9 +383,13 @@ model Class {
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
-  course  Course        @relation(fields: [courseId], references: [id], onDelete: Restrict)
-  term    AcademicTerm? @relation(fields: [termId], references: [id], onDelete: SetNull)
-  members ClassMember[]
+  course         Course               @relation(fields: [courseId], references: [id], onDelete: Restrict)
+  term           AcademicTerm?        @relation(fields: [termId], references: [id], onDelete: SetNull)
+  members        ClassMember[]
+  units          Unit[]
+  entryOverrides EntryClassOverride[]
+  unitOverrides  UnitClassOverride[]
+  progress       EntryProgress[]
 
   @@index([courseId])
   @@index([termId])
@@ -383,23 +418,160 @@ model ClassMember {
   @@map("class_members")
 }
 
+// ───────────────────────── Content ─────────────────────────
+
+/// A section of a course (classId null) or class-only content (classId set).
+model Unit {
+  id                 String    @id @default(cuid())
+  courseId           String
+  classId            String?
+  title              String
+  description        String?   @db.Text
+  position           Int       @default(0)
+  releaseAt          DateTime?
+  /// Unit whose required entries must be completed first.
+  prerequisiteUnitId String?
+  deletedAt          DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  course       Course              @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  class        Class?              @relation(fields: [classId], references: [id], onDelete: Cascade)
+  prerequisite Unit?               @relation("UnitPrerequisite", fields: [prerequisiteUnitId], references: [id], onDelete: SetNull)
+  dependents   Unit[]              @relation("UnitPrerequisite")
+  entries      Entry[]
+  overrides    UnitClassOverride[]
+
+  @@index([courseId, classId, position])
+  @@map("units")
+}
+
+/// One content item. `content` and `settings` are validated per type by the entry registry.
+model Entry {
+  id          String        @id @default(cuid())
+  unitId      String
+  type        EntryType
+  title       String
+  description String?       @db.Text
+  position    Int           @default(0)
+  status      PublishStatus @default(DRAFT)
+  required    Boolean       @default(true)
+  releaseAt   DateTime?
+  dueAt       DateTime?
+  content     Json
+  settings    Json?
+  createdById String?
+  deletedAt   DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  unit      Unit                 @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  createdBy User?                @relation("EntryCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  files     EntryFile[]
+  overrides EntryClassOverride[]
+  progress  EntryProgress[]
+
+  @@index([unitId, position])
+  @@map("entries")
+}
+
+/// Files referenced by an entry's content (for access checks and cleanup).
+model EntryFile {
+  entryId String
+  fileId  String
+
+  entry Entry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  file  File  @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@id([entryId, fileId])
+  @@index([fileId])
+  @@map("entry_files")
+}
+
+/// Per-class changes to course content: hide it or shift its dates.
+model EntryClassOverride {
+  entryId   String
+  classId   String
+  hidden    Boolean   @default(false)
+  releaseAt DateTime?
+  dueAt     DateTime?
+  updatedAt DateTime  @updatedAt
+
+  entry Entry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  class Class @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@id([entryId, classId])
+  @@index([classId])
+  @@map("entry_class_overrides")
+}
+
+model UnitClassOverride {
+  unitId    String
+  classId   String
+  hidden    Boolean   @default(false)
+  releaseAt DateTime?
+  updatedAt DateTime  @updatedAt
+
+  unit  Unit  @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  class Class @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@id([unitId, classId])
+  @@index([classId])
+  @@map("unit_class_overrides")
+}
+
+model EntryProgress {
+  id           String         @id @default(cuid())
+  userId       String
+  entryId      String
+  classId      String
+  status       ProgressStatus @default(IN_PROGRESS)
+  /// 0–100
+  percent      Int            @default(0)
+  /// Seconds into a video/audio, or the page/slide number.
+  lastPosition Float?
+  timeSpentSec Int            @default(0)
+  startedAt    DateTime       @default(now())
+  completedAt  DateTime?
+  updatedAt    DateTime       @updatedAt
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entry Entry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  class Class @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, entryId, classId])
+  @@index([classId, userId])
+  @@index([entryId])
+  @@map("entry_progress")
+}
+
 // ───────────────────────── Files ─────────────────────────
 
 /// A stored blob. Access is decided by what references it (see src/features/files/access.ts).
 model File {
-  id           String   @id @default(cuid())
-  storageKey   String   @unique @db.VarChar(512)
+  id           String     @id @default(cuid())
+  storageKey   String     @unique @db.VarChar(512)
   originalName String
   mime         String
   size         Int
   ownerId      String?
-  createdAt    DateTime @default(now())
+  status       FileStatus @default(READY)
+  /// Set on derived renditions (e.g. the PDF converted from a PowerPoint); access follows the source.
+  sourceId     String?
+  /// Derived renditions, e.g. { pdfFileId } for converted presentations, { error } on failure.
+  derived      Json?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
 
   owner           User?            @relation(fields: [ownerId], references: [id], onDelete: SetNull)
   studentDocument StudentDocument?
   courseCover     Course?
+  entries         EntryFile[]
+  source          File?            @relation("FileRenditions", fields: [sourceId], references: [id], onDelete: Cascade)
+  renditions      File[]           @relation("FileRenditions")
 
   @@index([ownerId])
+  @@index([sourceId])
   @@map("files")
 }
 

@@ -14,6 +14,7 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Generated / local output:
     ".next-e2e/**",
+    "public/**",
     "src/generated/**",
     "playwright-report/**",
     "test-results/**",

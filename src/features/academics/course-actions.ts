@@ -81,6 +81,7 @@ export const cloneCourse = action({ permission: "courses.manage", schema: cloneC
     if (source.editors.length) {
       await tx.courseEditor.createMany({ data: source.editors.map((e) => ({ courseId: copy.id, userId: e.userId })) });
     }
+    await copyCourseContent(tx, source.id, copy.id, actor.id);
     await audit(
       { actorId: actor.id, action: "course.clone", entityType: "Course", entityId: copy.id, diff: { from: source.id } },
       tx,
@@ -89,6 +90,45 @@ export const cloneCourse = action({ permission: "courses.manage", schema: cloneC
   });
   redirect(`/admin/courses/${created.id}`);
 });
+
+/** Copies course-level units and entries (not class-only content); files are shared, not duplicated. */
+async function copyCourseContent(tx: Tx, fromCourseId: string, toCourseId: string, actorId: string) {
+  const units = await tx.unit.findMany({
+    where: { courseId: fromCourseId, classId: null, deletedAt: null },
+    include: { entries: { where: { deletedAt: null }, include: { files: true } } },
+  });
+  const unitIds = new Map<string, string>();
+  for (const u of units) {
+    const copy = await tx.unit.create({
+      data: { courseId: toCourseId, title: u.title, description: u.description, position: u.position, releaseAt: u.releaseAt },
+    });
+    unitIds.set(u.id, copy.id);
+    for (const e of u.entries) {
+      const entry = await tx.entry.create({
+        data: {
+          unitId: copy.id,
+          type: e.type,
+          title: e.title,
+          description: e.description,
+          position: e.position,
+          status: e.status,
+          required: e.required,
+          releaseAt: e.releaseAt,
+          dueAt: e.dueAt,
+          content: e.content as Prisma.InputJsonValue,
+          settings: (e.settings ?? undefined) as Prisma.InputJsonValue | undefined,
+          createdById: actorId,
+        },
+      });
+      if (e.files.length) await tx.entryFile.createMany({ data: e.files.map((f) => ({ entryId: entry.id, fileId: f.fileId })) });
+    }
+  }
+  for (const u of units) {
+    if (u.prerequisiteUnitId && unitIds.has(u.prerequisiteUnitId)) {
+      await tx.unit.update({ where: { id: unitIds.get(u.id)! }, data: { prerequisiteUnitId: unitIds.get(u.prerequisiteUnitId)! } });
+    }
+  }
+}
 
 const editorSchema = z.object({ courseId: z.string().min(1), userId: z.string().min(1) });
 

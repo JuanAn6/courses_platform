@@ -68,7 +68,7 @@ export function DocumentsPanel({ studentId, documents }: { studentId: string; do
                   </div>
                   <div className="flex gap-2">
                     <Button variant="outline" asChild>
-                      <a href={`/api/files/${d.fileId}`} aria-label={`Download ${d.title}`}>
+                      <a href={`/api/files/${d.fileId}?download=1`} aria-label={`Download ${d.title}`}>
                         <Download /> Download
                       </a>
                     </Button>

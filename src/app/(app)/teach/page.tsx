@@ -59,12 +59,12 @@ export default async function TeachOverviewPage() {
       {courses.length ? (
         <section aria-labelledby="courses-heading">
           <h2 id="courses-heading" className="mb-1 text-lg font-semibold">Courses you edit</h2>
-          <p className="mb-3 text-sm text-muted-foreground">The course builder for units and lessons arrives with the content engine.</p>
+          <p className="mb-3 text-sm text-muted-foreground">Build the units and lessons shared by all classes of these courses.</p>
           <ul className="divide-y rounded-lg border">
             {courses.map((c) => (
               <li key={c.id} className="flex items-center justify-between gap-2 px-4 py-3 text-sm">
                 <span>
-                  <span className="font-medium">{c.title}</span>
+                  <Link href={`/teach/courses/${c.id}`} className="font-medium hover:underline">{c.title}</Link>
                   <span className="ml-2 font-mono text-xs text-muted-foreground">{c.code}</span>
                 </span>
                 <CourseStatusBadge status={c.status} />

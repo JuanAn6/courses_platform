@@ -7,7 +7,7 @@ A learning platform for a single institution. Admins, secretaries, teachers, ass
 
 ## Getting started
 
-Requirements: Node 20.9+ and MySQL 8 or MariaDB 10.4+.
+Requirements: Node 20.9+ and MySQL 8 or MariaDB 10.4+. Optional: LibreOffice, used to convert PowerPoint uploads to slides (auto-detected, or set `SOFFICE_PATH`).
 
 ```bash
 cp .env.example .env          # set DATABASE_URL and BETTER_AUTH_SECRET

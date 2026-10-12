@@ -8,6 +8,8 @@ import { PageHeader } from "@/components/page-header";
 import { ClassStatusBadge } from "@/features/academics/components/badges";
 import { CourseCover } from "@/features/academics/components/course-cover";
 import { myStudentClasses } from "@/features/academics/queries";
+import { ProgressBar } from "@/features/entries/components/class-outline";
+import { getStudentOutline } from "@/features/entries/queries";
 import { requireArea } from "@/lib/auth/session";
 
 export const metadata: Metadata = { title: "My classes" };
@@ -15,6 +17,8 @@ export const metadata: Metadata = { title: "My classes" };
 export default async function LearnOverviewPage() {
   const user = await requireArea("learn");
   const classes = await myStudentClasses(user.id);
+  const outlines = await Promise.all(classes.map((k) => getStudentOutline(k.id, k.courseId, user.id)));
+  const percentFor = new Map(classes.map((k, i) => [k.id, outlines[i].percent]));
 
   return (
     <>
@@ -49,6 +53,9 @@ export default async function LearnOverviewPage() {
                     {k.term ? ` · ${k.term.name}` : ""}
                     {k.members.length ? ` · ${k.members.map((m) => m.user.name).join(", ")}` : ""}
                   </CardDescription>
+                  {percentFor.get(k.id) != null ? (
+                    <div className="pt-2"><ProgressBar percent={percentFor.get(k.id)!} label="Progress" /></div>
+                  ) : null}
                 </CardHeader>
               </Card>
             </Link>
