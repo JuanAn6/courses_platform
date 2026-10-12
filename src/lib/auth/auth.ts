@@ -5,6 +5,7 @@ import { APIError } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
 import { db } from "@/lib/db";
 import { env } from "@/env";
+import { impersonation } from "./impersonation";
 
 export const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7; // 7 days
 
@@ -15,7 +16,7 @@ export const auth = betterAuth({
   database: prismaAdapter(db, { provider: "mysql" }),
   emailAndPassword: {
     enabled: true,
-    // Accounts are created by admins/secretaries (invites arrive in phase 2).
+    // Accounts are created by admins/secretaries and activated through invite links.
     disableSignUp: true,
     minPasswordLength: 8,
   },
@@ -37,6 +38,8 @@ export const auth = betterAuth({
           }
         },
         after: async (session) => {
+          // An admin "viewing as" someone is not that person's login.
+          if ((session as { impersonatedBy?: string | null }).impersonatedBy) return;
           await db.user.update({
             where: { id: session.userId },
             data: { lastLoginAt: new Date() },
@@ -45,6 +48,24 @@ export const auth = betterAuth({
       },
     },
   },
-  // Must be last: lets Server Actions set auth cookies.
-  plugins: [nextCookies()],
+  plugins: [
+    impersonation({
+      authorize: async (actorId, targetId) => {
+        if (actorId === targetId) return "You can't impersonate yourself.";
+        const [actor, target] = await Promise.all([
+          db.user.findUnique({ where: { id: actorId }, select: { roles: { select: { role: true } } } }),
+          db.user.findUnique({
+            where: { id: targetId },
+            select: { status: true, deletedAt: true, roles: { select: { role: true } } },
+          }),
+        ]);
+        if (!actor?.roles.some((r) => r.role === "ADMIN")) return "Only administrators can impersonate.";
+        if (!target || target.deletedAt || target.status !== "ACTIVE") return "Only active users can be impersonated.";
+        if (target.roles.some((r) => r.role === "ADMIN")) return "Administrators can't be impersonated.";
+        return null;
+      },
+    }),
+    // Must be last: lets Server Actions set auth cookies.
+    nextCookies(),
+  ],
 });

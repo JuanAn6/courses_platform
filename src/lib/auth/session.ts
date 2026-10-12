@@ -18,6 +18,8 @@ export type CurrentUser = {
   email: string;
   image: string | null;
   roles: Role[];
+  /** Set when an admin is viewing the app as this user. */
+  impersonator: { id: string; name: string } | null;
 };
 
 /** The signed-in user with their roles, or null. Memoized per request. */
@@ -40,12 +42,18 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   // A user suspended mid-session loses access on the next request.
   if (!user || user.deletedAt || user.status !== "ACTIVE") return null;
 
+  const impersonatedBy = (session.session as { impersonatedBy?: string | null }).impersonatedBy;
+  const impersonator = impersonatedBy
+    ? await db.user.findUnique({ where: { id: impersonatedBy }, select: { id: true, name: true } })
+    : null;
+
   return {
     id: user.id,
     name: user.name,
     email: user.email,
     image: user.image,
     roles: user.roles.map((r) => r.role),
+    impersonator,
   };
 });
 

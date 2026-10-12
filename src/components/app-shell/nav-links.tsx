@@ -5,12 +5,15 @@ import { usePathname } from "next/navigation";
 import {
   BookOpen,
   Briefcase,
+  Contact,
   GraduationCap,
   History,
   House,
   Settings,
   Shield,
+  Upload,
   User,
+  UserCog,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -27,17 +30,26 @@ const ICONS: Record<NavIcon, LucideIcon> = {
   graduation: GraduationCap,
   book: BookOpen,
   users: Users,
+  "user-cog": UserCog,
+  contact: Contact,
+  upload: Upload,
 };
 
-/** Area roots (/admin) match exactly; other items also match their sub-pages. */
-function isActive(pathname: string, href: string, sectionRoots: Set<string>) {
-  if (sectionRoots.has(href)) return pathname === href;
-  return pathname === href || pathname.startsWith(`${href}/`);
+/** The single best-matching item: exact match, else the longest href that prefixes the path.
+ * Area roots (/admin) only match exactly, so their sub-pages highlight the specific item. */
+function activeHref(pathname: string, sections: NavSection[]): string | undefined {
+  const roots = new Set(sections.map((s) => s.items[0]?.href).filter((h) => h && h !== "/dashboard"));
+  let best: string | undefined;
+  for (const item of sections.flatMap((s) => s.items)) {
+    const matches = pathname === item.href || (!roots.has(item.href) && pathname.startsWith(`${item.href}/`));
+    if (matches && (!best || item.href.length > best.length)) best = item.href;
+  }
+  return best;
 }
 
 export function NavLinks({ sections, onNavigate }: { sections: NavSection[]; onNavigate?: () => void }) {
   const pathname = usePathname();
-  const roots = new Set(sections.map((s) => s.items[0]?.href).filter((h) => h && h !== "/dashboard"));
+  const current = activeHref(pathname, sections);
 
   return (
     <nav className="flex flex-col gap-6" aria-label="Main">
@@ -48,7 +60,7 @@ export function NavLinks({ sections, onNavigate }: { sections: NavSection[]; onN
           </h2>
           {section.items.map((item) => {
             const Icon = ICONS[item.icon];
-            const active = isActive(pathname, item.href, roots);
+            const active = item.href === current;
             return (
               <Link
                 key={item.href}

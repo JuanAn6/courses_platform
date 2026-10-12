@@ -10,7 +10,10 @@ export type NavIcon =
   | "briefcase"
   | "graduation"
   | "book"
-  | "users";
+  | "users"
+  | "user-cog"
+  | "contact"
+  | "upload";
 
 export type NavItem = { href: string; label: string; icon: NavIcon };
 export type NavSection = { title: string; items: NavItem[] };
@@ -24,10 +27,15 @@ const GENERAL: NavItem[] = [
 const AREA_ITEMS: Record<Area, NavItem[]> = {
   admin: [
     { href: "/admin", label: "Overview", icon: "shield" },
+    { href: "/admin/users", label: "Users", icon: "user-cog" },
     { href: "/admin/settings", label: "Settings", icon: "settings" },
     { href: "/admin/audit-log", label: "Audit log", icon: "history" },
   ],
-  office: [{ href: "/office", label: "Overview", icon: "briefcase" }],
+  office: [
+    { href: "/office", label: "Overview", icon: "briefcase" },
+    { href: "/office/students", label: "Students", icon: "contact" },
+    { href: "/office/students/import", label: "Import students", icon: "upload" },
+  ],
   teach: [{ href: "/teach", label: "Overview", icon: "graduation" }],
   learn: [{ href: "/learn", label: "My classes", icon: "book" }],
   guardian: [{ href: "/guardian", label: "My students", icon: "users" }],

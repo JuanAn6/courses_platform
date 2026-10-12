@@ -15,6 +15,7 @@
 
 # next.js
 /.next/
+/.next-e2e/
 /out/
 
 # production
@@ -41,6 +42,10 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# uploaded files (local storage driver)
+/storage/
+/storage-e2e/
+
 # prisma client
 /src/generated/
 
@@ -48,3 +53,6 @@ next-env.d.ts
 /test-results/
 /playwright-report/
 /playwright/.cache/
+
+# local editor tasks
+.vscode/tasks.json

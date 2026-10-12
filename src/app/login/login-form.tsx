@@ -1,21 +1,21 @@
 "use client";
 
-import { useActionState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FormField } from "@/components/form-field";
 import { signIn } from "@/features/auth/actions";
+import { useActionForm } from "@/hooks/use-action-form";
 import type { ActionState } from "@/lib/actions";
 
 const initial: ActionState = { status: "idle" };
 
 export function LoginForm({ next }: { next: string }) {
-  const [state, formAction, pending] = useActionState(signIn, initial);
+  const { state, formAction, onSubmit, pending } = useActionForm(signIn, initial);
   const fieldErrors = state.status === "error" ? state.fieldErrors : undefined;
 
   return (
-    <form action={formAction} className="grid gap-4" noValidate>
+    <form action={formAction} onSubmit={onSubmit} className="grid gap-4" noValidate>
       <input type="hidden" name="next" value={next} />
       {state.status === "error" && !fieldErrors ? (
         <Alert variant="destructive">

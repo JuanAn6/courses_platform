@@ -1,17 +1,18 @@
 "use client";
 
-import { useActionState, useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FormField } from "@/components/form-field";
 import { changePassword } from "@/features/auth/actions";
+import { useActionForm } from "@/hooks/use-action-form";
 import type { ActionState } from "@/lib/actions";
 
 const initial: ActionState = { status: "idle" };
 
 export function ChangePasswordForm() {
-  const [state, formAction, pending] = useActionState(changePassword, initial);
+  const { state, formAction, onSubmit, pending } = useActionForm(changePassword, initial);
   const formRef = useRef<HTMLFormElement>(null);
   const fieldErrors = state.status === "error" ? state.fieldErrors : undefined;
 
@@ -25,7 +26,7 @@ export function ChangePasswordForm() {
   }, [state]);
 
   return (
-    <form ref={formRef} action={formAction} className="grid gap-4" noValidate>
+    <form ref={formRef} action={formAction} onSubmit={onSubmit} className="grid gap-4" noValidate>
       <FormField id="currentPassword" label="Current password" error={fieldErrors?.currentPassword}>
         <Input id="currentPassword" name="currentPassword" type="password" autoComplete="current-password" />
       </FormField>

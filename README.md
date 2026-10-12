@@ -17,6 +17,8 @@ npm run db:seed               # demo accounts
 npm run dev                   # http://localhost:3000
 ```
 
+Invites and password resets are emailed when `SMTP_URL` is set. Otherwise they are printed to the server console and shown as copyable links in the UI.
+
 Every demo account uses the password `Password123!`:
 
 | Role | Email |
@@ -36,5 +38,6 @@ Every demo account uses the password `Password123!`:
 | `npm run typecheck` | Route type generation + `tsc` |
 | `npm run lint` | ESLint |
 | `npm test` | Vitest unit tests |
-| `npm run test:e2e` | Playwright end-to-end tests (seeded DB required) |
+| `npm run test:e2e` | Playwright end-to-end tests on an isolated server (:3100) and database (`course_platform_e2e`, recreated each run) |
+| `npm run script -- scripts/x.mts` | Run a maintenance/check script with app imports |
 | `npm run db:migrate` / `db:seed` / `db:reset` / `db:studio` | Prisma |

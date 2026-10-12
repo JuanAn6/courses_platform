@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
+import { useEffect } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { FormField } from "@/components/form-field";
 import { updateSettings } from "@/features/settings/actions";
 import type { Settings } from "@/features/settings/schemas";
+import { useActionForm } from "@/hooks/use-action-form";
 import type { ActionState } from "@/lib/actions";
 
 type Defaults = Settings<"general"> & Settings<"academic"> & Settings<"messaging">;
@@ -15,7 +16,7 @@ type Defaults = Settings<"general"> & Settings<"academic"> & Settings<"messaging
 const initial: ActionState = { status: "idle" };
 
 export function SettingsForm({ defaults, timeZones }: { defaults: Defaults; timeZones: string[] }) {
-  const [state, formAction, pending] = useActionState(updateSettings, initial);
+  const { state, formAction, onSubmit, pending } = useActionForm(updateSettings, initial);
   const errors = state.status === "error" ? state.fieldErrors : undefined;
 
   useEffect(() => {
@@ -24,7 +25,7 @@ export function SettingsForm({ defaults, timeZones }: { defaults: Defaults; time
   }, [state]);
 
   return (
-    <form action={formAction} className="grid max-w-2xl gap-6" noValidate>
+    <form action={formAction} onSubmit={onSubmit} className="grid max-w-2xl gap-6" noValidate>
       <Card>
         <CardHeader>
           <CardTitle>General</CardTitle>

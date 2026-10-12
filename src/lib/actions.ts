@@ -86,3 +86,30 @@ export function action<S extends z.ZodType, R = never>(
     }
   };
 }
+
+/**
+ * Like `action`, for calls with typed arguments instead of FormData (buttons, confirmations,
+ * client-side flows). Input is still validated: never trust what the client sends.
+ */
+export function command<S extends z.ZodType, R = never>(
+  opts: { permission?: Permission; schema: S },
+  handler: (input: z.output<S>, user: CurrentUser) => Promise<ActionState<R> | void>,
+) {
+  return async (input: z.input<S>): Promise<ActionState<R>> => {
+    try {
+      const user = await authorize(opts.permission);
+      const parsed = opts.schema.safeParse(input);
+      if (!parsed.success) {
+        return { status: "error", message: "Invalid request.", fieldErrors: z.flattenError(parsed.error).fieldErrors as Record<string, string[]> };
+      }
+      return (await handler(parsed.data, user)) ?? { status: "success" };
+    } catch (error) {
+      unstable_rethrow(error);
+      if (error instanceof AuthError || error instanceof ForbiddenError || error instanceof UserError) {
+        return { status: "error", message: error.message };
+      }
+      console.error("[command] unexpected error", error);
+      return { status: "error", message: "Something went wrong. Please try again." };
+    }
+  };
+}

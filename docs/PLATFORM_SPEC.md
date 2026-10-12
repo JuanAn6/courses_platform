@@ -13,7 +13,7 @@
 
 This file holds all the context needed to build it. `CLAUDE.md` at the repo root summarizes the conventions.
 
-**Status:** Phase 1 (Foundation) is done. See §6 for what it includes and §9 for changes from the original plan.
+**Status:** Phases 1 (Foundation) and 2 (People management) are done. See §6 for what it includes and §9 for changes from the original plan.
 
 **Decisions made with the user:** Next.js full-stack, **MySQL**, single institution, **English-only UI** (strings kept in one place so i18n can be added later), and all four extras: gradebook and certificates, attendance and calendar, messaging and notifications, and payments.
 
@@ -243,7 +243,7 @@ src/app/
    - Scaffold Next.js + TS, Tailwind/shadcn, Prisma (MySQL), env validation (`src/env.ts` with Zod).
    - Better Auth, User/roles, permissions helper, layouts per role, audit log, settings.
    - Seed script with an admin, a secretary, 2 teachers, 10 students and a guardian.
-2. **People management**
+2. **People management** ✅ *done*
    - Admin user CRUD and invites.
    - Secretary student records, documents, guardians, CSV import.
 3. **Academic structure**
@@ -321,3 +321,54 @@ src/app/
 - **Tests:**
   - Vitest (`src/**/*.test.ts`): permissions, navigation, settings parsing, redirect safety, DB URL parsing, diff.
   - Playwright (`e2e/`): login and redirect-back, bad password, sign-out, password change revoking other sessions, the access matrix for each role, and admin settings with an audit trail.
+
+### Phase 2 decisions
+- **Invites and password resets** use single-use links: `/set-password/<userId>.<secret>`.
+  - Only `sha256(secret)` is stored, in Better Auth's `verifications` table.
+  - Invite links last 7 days and reset links 2 hours.
+  - Issuing a new link invalidates the previous one.
+  - Accepting a link activates the account, revokes other sessions and signs the user in.
+- **Email:** `src/lib/mail.ts` sends through `SMTP_URL` when it is set. Otherwise it logs the message to the server console.
+  - The admin or office UI always shows a copyable link, so people can be onboarded without email.
+  - Bulk imports offer an "invite links" CSV download.
+- **Every account needs a unique email**, students included. Accounts with no email may come later if needed.
+- **Office vs admin scope:** secretaries create and manage only STUDENT and GUARDIAN accounts (`isOfficeManageable`). Admins manage everyone.
+- **Self-lockout guards:**
+  - Admins can't suspend or archive themselves, or remove their own ADMIN role.
+  - There is always at least one active admin (`src/features/users/rules.ts`).
+- **Archive is a soft delete** (`deletedAt`). It revokes sessions and links, keeps all records, and can be restored.
+- **Impersonation ("View as"):** a custom Better Auth plugin (`src/lib/auth/impersonation.ts`).
+  - Admin only. Administrators and inactive users can't be impersonated.
+  - Sessions last 1 hour.
+  - A banner with a stop button is always shown, and every start and stop is audited.
+- **Student codes:** `S<year>-<seq>` from a locked counter row in the `sequences` table.
+  - The row is created by `ensureStudentCodeSequence()`, which **must run before** the transaction (avoids gap-lock deadlocks and pool starvation).
+  - Codes typed in by hand are skipped.
+  - Checked by `npm run script -- scripts/check-student-codes.mts`, which allocates 20 codes concurrently.
+- **Files:**
+  - A local-disk driver (`src/lib/storage.ts`, `STORAGE_DIR`) with the same interface the S3 driver will implement in phase 4.
+  - Downloads go through `/api/files/[id]`, which checks `canReadFile` (`src/features/files/access.ts`) and returns 404 for both missing and forbidden files.
+  - Student documents are visible to secretaries and admins only.
+- **CSV:**
+  - Import has a preview step with per-row errors. Valid rows are imported in one transaction.
+  - Guardians are linked or created by email.
+  - Export excludes medical notes and neutralizes spreadsheet formulas.
+- **Forms** use `useActionForm` (`src/hooks/use-action-form.ts`), so React 19 doesn't clear the user's input after a failed submit.
+- **E2E isolation:**
+  - Playwright starts its own server on :3100 against `course_platform_e2e`, which `npm run e2e:prepare` drops, migrates and seeds on every run.
+  - Build output goes to `.next-e2e` and uploads to `storage-e2e`, so dev data is never touched.
+
+### Phase 2 deliverables (for reference)
+- **Admin** (`/admin/users`):
+  - List with search and role/status filters.
+  - Invite (`/new`).
+  - User page: edit name, email, phone and roles; resend invite; reset link; suspend/reactivate; archive/restore; "View as"; recent activity.
+- **Office** (`/office/students`):
+  - Directory with search (name, email, code, ID number), status filter and CSV export.
+  - Add student, with an optional invite.
+  - Record tabs: Profile (personal, enrollment, emergency, medical, office notes), Guardians (create or link existing, unlink), Documents (upload up to 10 MB, download, delete), Account (invite or reset link).
+  - CSV import wizard with a template.
+- **Public:** `/set-password/[token]`.
+- **Tests:**
+  - Unit tests for tokens, account rules, student codes, CSV parsing and export safety, file-name sanitizing, and form Zod helpers.
+  - E2E tests for invite → activate, form errors, suspend/reactivate/reset, impersonation, self-lockout, the full student record with document access control, CSV import, and export with role checks.
