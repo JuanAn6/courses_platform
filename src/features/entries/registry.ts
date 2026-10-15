@@ -5,14 +5,25 @@
  * Adding a type: add it to the Prisma enum, here, and to both component maps.
  */
 import { z } from "zod";
+import { quizItemSchema, quizSettingsSchema } from "@/features/assessment/quiz";
+import { rubricMax, rubricSchema } from "@/features/assessment/rubric";
 import { toEmbedUrl, isHttpUrl, videoEmbedUrl } from "./embeds";
 import { EMPTY_DOC, sanitizeDoc } from "./rich-text/sanitize";
 
-export const ENTRY_TYPES = ["TEXT", "VIDEO", "AUDIO", "DOCUMENT", "PRESENTATION", "LINK", "EMBED"] as const;
+export const ENTRY_TYPES = ["TEXT", "VIDEO", "AUDIO", "DOCUMENT", "PRESENTATION", "LINK", "EMBED", "QUIZ", "ASSIGNMENT"] as const;
 export type EntryType = (typeof ENTRY_TYPES)[number];
 
-/** manual: student marks it done · media: watched/listened percentage · pages: last slide reached · link: opened. */
-export type Tracking = "manual" | "media" | "pages" | "link";
+/**
+ * manual: student marks it done · media: watched/listened percentage · pages: last slide reached ·
+ * link: opened · submission: a quiz attempt or assignment was submitted.
+ */
+export type Tracking = "manual" | "media" | "pages" | "link" | "submission";
+
+/** Entry types that produce a grade. */
+export const GRADABLE_TYPES = ["QUIZ", "ASSIGNMENT"] as const;
+export function isGradable(type: string): type is (typeof GRADABLE_TYPES)[number] {
+  return (GRADABLE_TYPES as readonly string[]).includes(type);
+}
 
 const optionalId = z.string().min(1).nullish().transform((v) => v ?? null);
 const optionalUrl = z.string().trim().max(2000).nullish().transform((v) => v || null);
@@ -31,12 +42,26 @@ export const contentSchemas = {
   PRESENTATION: z.object({ source: z.enum(["file", "url"]).default("file"), fileId: optionalId, url: optionalUrl }),
   LINK: z.object({ url: optionalUrl }),
   EMBED: z.object({ url: optionalUrl, height: z.coerce.number().int().min(200).max(1600).default(600) }),
+  QUIZ: z.object({
+    settings: quizSettingsSchema.default(quizSettingsSchema.parse({})),
+    items: z.array(quizItemSchema).max(100).default([]),
+  }),
+  ASSIGNMENT: z.object({
+    instructions: z.unknown().default(EMPTY_DOC),
+    allowText: z.boolean().default(true),
+    allowFiles: z.boolean().default(true),
+    maxFiles: z.number().int().min(1).max(10).default(3),
+    allowResubmission: z.boolean().default(true),
+    /** Used when there is no rubric. */
+    points: z.number().min(0).max(1000).default(10),
+    rubric: rubricSchema.nullable().default(null),
+  }),
 } satisfies Record<EntryType, z.ZodType>;
 
 export type EntryContent<T extends EntryType> = z.output<(typeof contentSchemas)[T]>;
 export type AnyEntryContent = { [T in EntryType]: EntryContent<T> }[EntryType];
 
-export type UploadKind = "video" | "audio" | "document" | "presentation" | "image";
+export type UploadKind = "video" | "audio" | "document" | "presentation" | "image" | "submission";
 
 export const ENTRY_TYPE_INFO: Record<
   EntryType,
@@ -49,6 +74,8 @@ export const ENTRY_TYPE_INFO: Record<
   PRESENTATION: { label: "Presentation", description: "Slides from a PDF/PowerPoint file or Google Slides.", icon: "presentation", upload: "presentation" },
   LINK: { label: "Link", description: "A link to an external website.", icon: "link" },
   EMBED: { label: "Embed", description: "Interactive content from Google, H5P, Genially, Figma or Canva.", icon: "embed" },
+  QUIZ: { label: "Quiz", description: "Questions from the course bank, graded automatically where possible.", icon: "quiz" },
+  ASSIGNMENT: { label: "Assignment", description: "Students submit text or files; you grade with an optional rubric.", icon: "assignment" },
 };
 
 /** Allowed MIME types and size limits per upload kind. */
@@ -89,6 +116,24 @@ export const UPLOAD_RULES: Record<UploadKind, { mimes: Record<string, string>; m
     mimes: { "image/jpeg": "JPEG", "image/png": "PNG", "image/webp": "WebP", "image/gif": "GIF" },
     maxBytes: 10 * 1024 * 1024,
   },
+  /** Student work (assignments, file-upload questions). */
+  submission: {
+    mimes: {
+      "application/pdf": "PDF",
+      "application/msword": "Word",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "Word",
+      "application/vnd.ms-excel": "Excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "Excel",
+      "application/vnd.ms-powerpoint": "PowerPoint",
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation": "PowerPoint",
+      "text/plain": "Text",
+      "image/jpeg": "JPEG",
+      "image/png": "PNG",
+      "image/webp": "WebP",
+      "application/zip": "ZIP",
+    },
+    maxBytes: 25 * 1024 * 1024,
+  },
 };
 
 export function parseContent<T extends EntryType>(type: T, raw: unknown): EntryContent<T> {
@@ -102,6 +147,11 @@ export function prepareContent(type: EntryType, raw: unknown): { content: AnyEnt
     const { doc, fileIds } = sanitizeDoc((raw as { doc?: unknown } | null)?.doc);
     return { content: { doc }, fileIds };
   }
+  if (type === "ASSIGNMENT") {
+    const parsed = contentSchemas.ASSIGNMENT.parse(raw ?? {});
+    const { doc, fileIds } = sanitizeDoc(parsed.instructions);
+    return { content: { ...parsed, instructions: doc }, fileIds };
+  }
   const content = contentSchemas[type].parse(raw ?? {}) as AnyEntryContent;
   return { content, fileIds: referencedFiles(type, content) };
 }
@@ -110,6 +160,8 @@ export function referencedFiles(type: EntryType, content: AnyEntryContent): stri
   const c = content as Record<string, unknown>;
   if (type === "DOCUMENT") return [...new Set((c.fileIds as string[]) ?? [])];
   if (type === "TEXT") return sanitizeDoc(c.doc).fileIds;
+  if (type === "ASSIGNMENT") return sanitizeDoc(c.instructions).fileIds;
+  if (type === "QUIZ") return [];
   if ((type === "VIDEO" || type === "PRESENTATION") && c.source === "url") return [];
   return typeof c.fileId === "string" ? [c.fileId] : [];
 }
@@ -136,7 +188,23 @@ export function publishProblems(type: EntryType, raw: unknown): string[] {
       return isHttpUrl(String(c.url ?? "")) ? [] : ["Enter a web address starting with https://"];
     case "EMBED":
       return toEmbedUrl(String(c.url ?? "")) ? [] : ["Enter a link from a supported provider."];
+    case "QUIZ":
+      return (c.items as unknown[]).length ? [] : ["Add at least one question."];
+    case "ASSIGNMENT": {
+      const problems: string[] = [];
+      if (!c.allowText && !c.allowFiles) problems.push("Allow text, files, or both.");
+      const rubric = c.rubric as { criteria: unknown[] } | null;
+      if (rubric && rubric.criteria.length === 0) problems.push("Add rubric criteria or remove the rubric.");
+      if (!rubric && !(c.points as number)) problems.push("Set the points.");
+      return problems;
+    }
   }
+}
+
+/** Maximum score of an assignment (rubric total, or its points). */
+export function assignmentMaxScore(raw: unknown): number {
+  const c = parseContent("ASSIGNMENT", raw);
+  return c.rubric ? rubricMax(c.rubric) : c.points;
 }
 
 export function trackingFor(type: EntryType, raw: unknown): Tracking {
@@ -145,6 +213,7 @@ export function trackingFor(type: EntryType, raw: unknown): Tracking {
   if (type === "AUDIO") return "media";
   if (type === "PRESENTATION") return c.source === "file" ? "pages" : "manual";
   if (type === "LINK") return "link";
+  if (type === "QUIZ" || type === "ASSIGNMENT") return "submission";
   return "manual";
 }
 

@@ -190,6 +190,13 @@ export const updateEntry = action({ schema: updateEntrySchema }, async (input, u
     }
   }
 
+  if (type === "QUIZ") {
+    // Quizzes may only use questions from this course's bank.
+    const ids = (content as { items: { kind: string; questionId?: string }[] }).items.flatMap((i) => (i.kind === "question" && i.questionId ? [i.questionId] : []));
+    const found = await db.question.count({ where: { id: { in: ids }, courseId: entry.unit.courseId } });
+    if (found !== new Set(ids).size) throw new UserError("Some questions don't belong to this course.");
+  }
+
   await db.$transaction(async (tx) => {
     await assertAttachable(tx, user, entry, fileIds);
     await tx.entry.update({

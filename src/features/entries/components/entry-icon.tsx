@@ -1,4 +1,4 @@
-import { Code2, FileAudio, FileText, Files, Link as LinkIcon, Presentation, Video, type LucideIcon } from "lucide-react";
+import { ClipboardCheck, Code2, FileAudio, FilePen, FileText, Files, Link as LinkIcon, Presentation, Video, type LucideIcon } from "lucide-react";
 import type { EntryType } from "../registry";
 
 const ICONS: Record<EntryType, LucideIcon> = {
@@ -9,6 +9,8 @@ const ICONS: Record<EntryType, LucideIcon> = {
   PRESENTATION: Presentation,
   LINK: LinkIcon,
   EMBED: Code2,
+  QUIZ: ClipboardCheck,
+  ASSIGNMENT: FilePen,
 };
 
 export function EntryIcon({ type, className }: { type: string; className?: string }) {

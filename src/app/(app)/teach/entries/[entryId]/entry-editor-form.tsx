@@ -16,7 +16,9 @@ import { deleteEntry, reorderEntries, updateEntry } from "@/features/entries/act
 import { ContentEditor } from "@/features/entries/components/editors";
 import { EntryViewer } from "@/features/entries/components/viewers";
 import type { FileInfo } from "@/features/entries/queries";
-import { publishProblems, referencedFiles, trackingFor, completionThreshold, type AnyEntryContent, type EntryType, type Tracking } from "@/features/entries/registry";
+import type { BankEntry } from "@/features/assessment/components/quiz-editor";
+import { assignmentMaxScore, publishProblems, referencedFiles, trackingFor, completionThreshold, type AnyEntryContent, type EntryContent, type EntryType, type Tracking } from "@/features/entries/registry";
+import type { AssignmentPanelData, QuizPanelData } from "@/features/assessment/components/student-panels";
 import { RichTextView } from "@/features/entries/rich-text/rich-text-view";
 import { useActionForm } from "@/hooks/use-action-form";
 import { useActionToast } from "@/hooks/use-action-toast";
@@ -44,11 +46,13 @@ export function EntryEditorForm({
   units,
   files: initialFiles,
   timezone,
+  context,
 }: {
   entry: EditableEntry;
   units: { id: string; title: string; entryIds: string[] }[];
   files: FileInfo[];
   timezone: string;
+  context: { courseId: string; bank: BankEntry[] };
 }) {
   const { state, formAction, onSubmit, pending } = useActionForm(updateEntry, initial);
   const errors = state.status === "error" ? state.fieldErrors : undefined;
@@ -88,7 +92,7 @@ export function EntryEditorForm({
             <Card>
               <CardHeader><CardTitle>Content</CardTitle></CardHeader>
               <CardContent>
-                <ContentEditor type={entry.type} value={content} onChange={(next) => setContent((prev) => (typeof next === "function" ? next(prev) : next))} files={files} onFile={addFile} />
+                <ContentEditor type={entry.type} value={content} onChange={(next) => setContent((prev) => (typeof next === "function" ? next(prev) : next))} files={files} onFile={addFile} context={context} />
               </CardContent>
             </Card>
           </div>
@@ -153,7 +157,14 @@ export function EntryEditorForm({
               threshold={completionThreshold(entry.type, content)}
               mode="preview"
               initial={{ status: "NOT_STARTED", percent: 0, position: null }}
-              textBody={entry.type === "TEXT" ? <RichTextView doc={(content as { doc: unknown }).doc} /> : undefined}
+              textBody={
+                entry.type === "TEXT" ? (
+                  <RichTextView doc={(content as { doc: unknown }).doc} />
+                ) : entry.type === "ASSIGNMENT" ? (
+                  <RichTextView doc={(content as { instructions: unknown }).instructions} />
+                ) : undefined
+              }
+              assessment={previewAssessment(entry, content, context)}
             />
           </CardContent>
         </Card>
@@ -197,4 +208,51 @@ function MoveCard({ entryId, unitId, units }: { entryId: string; unitId: string;
       </CardContent>
     </Card>
   );
+}
+
+/** Panel data for the editor's preview (no student data). */
+function previewAssessment(
+  entry: { id: string; type: EntryType },
+  content: AnyEntryContent,
+  context: { courseId: string; bank: BankEntry[] },
+): QuizPanelData | AssignmentPanelData | undefined {
+  if (entry.type === "QUIZ") {
+    const c = content as EntryContent<"QUIZ">;
+    const points = new Map(context.bank.map((q) => [q.id, q.points]));
+    const questionCount = c.items.reduce((n, i) => n + (i.kind === "question" ? 1 : i.count), 0);
+    const totalPoints = c.items.reduce((s, i) => s + (i.kind === "question" ? (i.points ?? points.get(i.questionId) ?? 0) : (i.points ?? 1) * i.count), 0);
+    return {
+      kind: "quiz",
+      classId: "",
+      entryId: entry.id,
+      questionCount,
+      totalPoints,
+      timeLimitMin: c.settings.timeLimitMin,
+      maxAttempts: c.settings.maxAttempts,
+      scoring: c.settings.scoring,
+      passingPercent: c.settings.passingPercent,
+      attempts: [],
+      inProgressId: null,
+      refusal: null,
+      resultsVisible: true,
+      grade: null,
+    };
+  }
+  if (entry.type === "ASSIGNMENT") {
+    const c = content as EntryContent<"ASSIGNMENT">;
+    return {
+      kind: "assignment",
+      classId: "",
+      entryId: entry.id,
+      allowText: c.allowText,
+      allowFiles: c.allowFiles,
+      maxFiles: c.maxFiles,
+      allowResubmission: c.allowResubmission,
+      maxScore: assignmentMaxScore(c),
+      rubric: c.rubric,
+      submissions: [],
+      grade: null,
+    };
+  }
+  return undefined;
 }

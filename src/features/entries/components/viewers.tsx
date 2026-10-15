@@ -10,6 +10,7 @@ import { recordProgress, type ProgressResult } from "../progress-actions";
 import type { FileInfo } from "../queries";
 import type { AnyEntryContent, EntryContent, EntryType, Tracking } from "../registry";
 import { PdfPages, PdfSlides } from "./pdf-lazy";
+import { AssignmentPanel, QuizPanel, type AssignmentPanelData, type QuizPanelData } from "@/features/assessment/components/student-panels";
 
 export type ViewerProps = {
   entryId: string;
@@ -22,14 +23,22 @@ export type ViewerProps = {
   /** "student" records progress; "preview" (staff) doesn't. */
   mode: "student" | "preview";
   initial: { status: ProgressResult["status"]; percent: number; position: number | null };
-  /** Server-rendered body for TEXT entries. */
+  /** Server-rendered body for TEXT entries (and assignment instructions). */
   textBody?: React.ReactNode;
+  /** Attempts/submissions/grade for quizzes and assignments. */
+  assessment?: QuizPanelData | AssignmentPanelData;
 };
 
 type Report = { percent?: number; position?: number; deltaSec?: number; complete?: boolean };
 
 function useProgress({ entryId, classId, mode, initial }: Pick<ViewerProps, "entryId" | "classId" | "mode" | "initial">) {
   const [state, setState] = useState<ProgressResult>({ status: initial.status, percent: initial.percent });
+  // Server data can change after an action elsewhere on the page (e.g. submitting an assignment).
+  const [seen, setSeen] = useState(initial);
+  if (seen.status !== initial.status || seen.percent !== initial.percent) {
+    setSeen(initial);
+    setState({ status: initial.status, percent: initial.percent });
+  }
   const enabled = mode === "student" && !!classId;
   const send = useCallback(
     async (report: Report) => {
@@ -106,7 +115,9 @@ function CompletionBar({
               ? "Go through every slide to complete."
               : tracking === "link"
                 ? "Open the link to complete."
-                : "Mark this as done when you've finished."}
+                : tracking === "submission"
+                  ? "Submit to complete."
+                  : "Mark this as done when you've finished."}
         </p>
       )}
       {tracking === "manual" && enabled ? (
@@ -180,6 +191,15 @@ function Body(props: BodyProps) {
         <Unavailable />
       );
     }
+    case "QUIZ":
+      return props.assessment?.kind === "quiz" ? <QuizPanel data={props.assessment} preview={props.mode === "preview"} /> : <Unavailable />;
+    case "ASSIGNMENT":
+      return (
+        <div className="grid gap-6">
+          {props.textBody ? <article>{props.textBody}</article> : null}
+          {props.assessment?.kind === "assignment" ? <AssignmentPanel data={props.assessment} preview={props.mode === "preview"} /> : null}
+        </div>
+      );
     case "EMBED": {
       const c = content as EntryContent<"EMBED">;
       const embed = c.url ? toEmbedUrl(c.url) : null;

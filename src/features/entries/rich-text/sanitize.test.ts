@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EMPTY_DOC, safeHref, sanitizeDoc } from "./sanitize";
+import { EMPTY_DOC, plainText, safeHref, sanitizeDoc } from "./sanitize";
 
 const doc = (...content: unknown[]) => ({ type: "doc", content });
 const p = (...content: unknown[]) => ({ type: "paragraph", content });
@@ -60,5 +60,14 @@ describe("safeHref", () => {
     ["data:text/html,x", null],
   ])("%s", (href, expected) => {
     expect(safeHref(href)).toBe(expected);
+  });
+});
+
+describe("plainText", () => {
+  it("extracts and truncates text", () => {
+    const d = doc(p({ type: "text", text: "Hello" }), p({ type: "text", text: "world" }), { type: "image", attrs: { src: "https://x/y.png" } });
+    expect(plainText(d)).toBe("Hello world [image]");
+    expect(plainText(d, 6)).toBe("Hello…");
+    expect(plainText(null)).toBe("");
   });
 });

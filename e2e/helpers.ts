@@ -1,4 +1,4 @@
-import { expect, type Browser, type Page } from "@playwright/test";
+import { expect, type Browser, type Locator, type Page } from "@playwright/test";
 
 export const PASSWORD = process.env.SEED_PASSWORD ?? "Password123!";
 
@@ -34,4 +34,15 @@ export async function acceptLink(browser: Browser, url: string, password: string
   await page.getByRole("button", { name: "Set password and sign in" }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
   return page;
+}
+
+/**
+ * Clicks a button that opens a confirmation dialog, retrying until it opens: right after a full
+ * page load the button can be visible before React has hydrated it.
+ */
+export async function openConfirm(page: Page, button: Locator) {
+  await expect(async () => {
+    await button.click();
+    await expect(page.getByRole("alertdialog")).toBeVisible({ timeout: 1000 });
+  }).toPass({ timeout: 15_000 });
 }

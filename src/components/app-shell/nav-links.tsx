@@ -6,6 +6,7 @@ import {
   BookOpen,
   Briefcase,
   CalendarRange,
+  ClipboardCheck,
   ClipboardList,
   Contact,
   FolderTree,
@@ -45,6 +46,7 @@ const ICONS: Record<NavIcon, LucideIcon> = {
   "calendar-range": CalendarRange,
   clipboard: ClipboardList,
   search: Search,
+  grading: ClipboardCheck,
 };
 
 /** The single best-matching item: exact match, else the longest href that prefixes the path.

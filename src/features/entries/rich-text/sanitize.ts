@@ -109,3 +109,21 @@ export function sanitizeDoc(input: unknown): { doc: RichNode; fileIds: string[];
   if (!doc.content?.length) doc.content = [{ type: "paragraph" }];
   return { doc, fileIds: [...fileIds], textLength };
 }
+
+/** Plain-text excerpt of a rich-text document (for lists and previews). */
+export function plainText(doc: unknown, max = 200): string {
+  const parts: string[] = [];
+  const walk = (n: unknown) => {
+    if (!n || typeof n !== "object") return;
+    const node = n as RichNode;
+    if (node.type === "text" && typeof node.text === "string") parts.push(node.text);
+    if (node.type === "image") parts.push("[image]");
+    if (Array.isArray(node.content)) {
+      for (const c of node.content) walk(c);
+      if (node.type !== "text" && node.type !== "doc") parts.push(" ");
+    }
+  };
+  walk(doc);
+  const text = parts.join("").replace(/\s+/g, " ").trim();
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}

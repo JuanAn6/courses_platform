@@ -8,7 +8,7 @@ import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import { hashPassword } from "better-auth/crypto";
 import { PrismaClient, type Role } from "../src/generated/prisma/client";
 import { parseDatabaseUrl } from "../src/lib/db-url";
-import { seedContent } from "./seed-content";
+import { seedAssessments, seedContent } from "./seed-content";
 
 const PASSWORD = process.env.SEED_PASSWORD ?? "Password123!";
 
@@ -173,6 +173,7 @@ async function seedAcademics(staff: Map<string, string>, studentIds: string[]) {
     editor: "teacher2@school.test",
   });
   await seedContent(db, { algebraId: algebra.id, spanishId: spanish.id, teacherId: staff.get("teacher1@school.test")! });
+  await seedAssessments(db, { algebraId: algebra.id, teacherId: staff.get("teacher1@school.test")! });
 
   const biology = await course({
     code: "SCI-120",

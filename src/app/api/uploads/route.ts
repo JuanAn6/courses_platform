@@ -18,12 +18,12 @@ import { storage, UploadTooLargeError } from "@/lib/storage";
 export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user) return Response.json({ error: "Sign in to upload." }, { status: 401 });
-  // Course content is authored by teachers and admins.
-  if (!hasRole(user.roles, "ADMIN", "TEACHER")) return Response.json({ error: "You can't upload files." }, { status: 403 });
-
   const kind = new URL(request.url).searchParams.get("kind") as UploadKind | null;
   const rules = kind ? UPLOAD_RULES[kind] : undefined;
   if (!kind || !rules) return Response.json({ error: "Unknown upload kind." }, { status: 400 });
+  // Students upload their own work; course content is authored by teachers and admins.
+  const allowedRoles = kind === "submission" ? (["STUDENT", "ADMIN", "TEACHER"] as const) : (["ADMIN", "TEACHER"] as const);
+  if (!hasRole(user.roles, ...allowedRoles)) return Response.json({ error: "You can't upload files." }, { status: 403 });
 
   const mime = (request.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
   if (!Object.hasOwn(rules.mimes, mime)) {
@@ -47,7 +47,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "PowerPoint conversion isn't available on this server. Upload a PDF instead." }, { status: 415 });
   }
 
-  const key = `entries/${user.id}/${crypto.randomUUID()}-${name}`;
+  const key = `${kind === "submission" ? "submissions" : "entries"}/${user.id}/${crypto.randomUUID()}-${name}`;
   let size: number;
   try {
     ({ size } = await storage.putStream(key, request.body, rules.maxBytes));

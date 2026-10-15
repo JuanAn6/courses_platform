@@ -31,6 +31,7 @@ export default async function TeachClassLayout({ children, params }: LayoutProps
         tabs={[
           { href: base, label: "Overview" },
           { href: `${base}/content`, label: "Content" },
+          { href: `${base}/assessments`, label: "Assessments" },
         ]}
       />
       {children}

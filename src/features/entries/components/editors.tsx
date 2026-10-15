@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FormField } from "@/components/form-field";
 import { formatBytes } from "@/lib/files";
+import { AssignmentEditor } from "@/features/assessment/components/assignment-editor";
+import { QuizEditor, type BankEntry } from "@/features/assessment/components/quiz-editor";
 import { retryConversion } from "../actions";
 import { EMBED_PROVIDERS, toEmbedUrl, videoEmbedUrl } from "../embeds";
 import type { FileInfo } from "../queries";
@@ -21,6 +23,8 @@ type Props<T extends EntryType> = {
   onChange: (next: EntryContent<T> | ((prev: EntryContent<T>) => EntryContent<T>)) => void;
   files: Map<string, FileInfo>;
   onFile: (file: FileInfo) => void;
+  /** Extra data some editors need (quizzes: the course's question bank). */
+  context?: { courseId: string; bank: BankEntry[] };
 };
 
 const asInfo = (f: UploadedFile): FileInfo => ({ ...f, pdfFileId: null, error: null });
@@ -42,6 +46,14 @@ export function ContentEditor({ type, ...props }: { type: EntryType } & Props<En
       return <LinkEditor {...(props as Props<"LINK">)} />;
     case "EMBED":
       return <EmbedEditor {...(props as Props<"EMBED">)} />;
+    case "QUIZ": {
+      const p = props as Props<"QUIZ">;
+      return <QuizEditor value={p.value} onChange={p.onChange} bank={p.context?.bank ?? []} courseId={p.context?.courseId ?? ""} />;
+    }
+    case "ASSIGNMENT": {
+      const p = props as Props<"ASSIGNMENT">;
+      return <AssignmentEditor value={p.value} onChange={p.onChange} />;
+    }
   }
 }
 

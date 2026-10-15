@@ -8,6 +8,8 @@ import { canEditUnit } from "@/features/entries/access";
 import { getEntryForEdit } from "@/features/entries/queries";
 import { ENTRY_TYPE_INFO, parseContent, trackingFor, completionThreshold, type EntryType } from "@/features/entries/registry";
 import { getSettings } from "@/features/settings/queries";
+import { listQuestions } from "@/features/assessment/question-queries";
+import { plainText } from "@/features/entries/rich-text/sanitize";
 import { requireArea } from "@/lib/auth/session";
 import { utcToZonedInput } from "@/lib/timezone";
 import { EntryEditorForm } from "./entry-editor-form";
@@ -24,6 +26,10 @@ export default async function EntryEditorPage({ params }: PageProps<"/teach/entr
   const { timezone } = await getSettings("general");
 
   const type = entry.type as EntryType;
+  const bank =
+    type === "QUIZ"
+      ? (await listQuestions(entry.unit.courseId)).map((q) => ({ id: q.id, type: q.type, text: plainText(q.prompt, 160), points: q.points, tags: q.tags }))
+      : [];
   const backHref = entry.unit.classId ? `/teach/classes/${entry.unit.classId}/content` : `/teach/courses/${entry.unit.courseId}`;
   const scope = entry.unit.class ? `${entry.unit.class.name} (class only)` : entry.unit.course.title;
 
@@ -51,6 +57,7 @@ export default async function EntryEditorPage({ params }: PageProps<"/teach/entr
         }}
         units={units.map((u) => ({ id: u.id, title: u.title, entryIds: u.entries.map((e) => e.id) }))}
         files={files}
+        context={{ courseId: entry.unit.courseId, bank }}
       />
     </>
   );

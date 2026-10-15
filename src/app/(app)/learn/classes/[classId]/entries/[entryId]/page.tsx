@@ -12,6 +12,7 @@ import { completionThreshold, ENTRY_TYPE_INFO, parseContent, referencedFiles, tr
 import { RichTextView } from "@/features/entries/rich-text/rich-text-view";
 import { getSettings } from "@/features/settings/queries";
 import { formatDateTime } from "@/lib/format";
+import { assignmentPanelData, quizPanelData } from "@/features/assessment/player-data";
 
 export const metadata: Metadata = { title: "Lesson" };
 
@@ -29,6 +30,13 @@ export default async function EntryPlayerPage({ params }: PageProps<"/learn/clas
   const content = parseContent(type, entry.content);
   const files = await getFilesInfo(referencedFiles(type, content));
   const { previous, next } = neighbors(outline, entryId);
+  const dueAt = found.entry.dueAt;
+  const assessment =
+    type === "QUIZ"
+      ? await quizPanelData({ classId, entryId, courseId: klass.courseId, userId: user.id, content: entry.content, dueAt, timezone })
+      : type === "ASSIGNMENT"
+        ? await assignmentPanelData({ classId, entryId, userId: user.id, content: entry.content, timezone })
+        : undefined;
 
   return (
     <div className="mx-auto grid max-w-4xl gap-6">
@@ -56,7 +64,14 @@ export default async function EntryPlayerPage({ params }: PageProps<"/learn/clas
             threshold={completionThreshold(type, content)}
             mode={klass.status === "ACTIVE" ? "student" : "preview"}
             initial={{ status: progress?.status ?? "NOT_STARTED", percent: progress?.percent ?? 0, position: progress?.lastPosition ?? null }}
-            textBody={type === "TEXT" ? <RichTextView doc={(content as { doc: unknown }).doc} /> : undefined}
+            textBody={
+              type === "TEXT" ? (
+                <RichTextView doc={(content as { doc: unknown }).doc} />
+              ) : type === "ASSIGNMENT" ? (
+                <RichTextView doc={(content as { instructions: unknown }).instructions} />
+              ) : undefined
+            }
+            assessment={assessment}
           />
         </CardContent>
       </Card>

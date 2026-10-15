@@ -13,7 +13,7 @@
 
 This file holds all the context needed to build it. `CLAUDE.md` at the repo root summarizes the conventions.
 
-**Status:** Phases 1–4 (Foundation, People management, Academic structure, Content engine) are done. See §6 for what it includes and §9 for changes from the original plan.
+**Status:** Phases 1–5 (Foundation, People management, Academic structure, Content engine, Assessment) are done. See §6 for what it includes and §9 for changes from the original plan.
 
 **Decisions made with the user:** Next.js full-stack, **MySQL**, single institution, **English-only UI** (strings kept in one place so i18n can be added later), and all four extras: gradebook and certificates, attendance and calendar, messaging and notifications, and payments.
 
@@ -252,7 +252,7 @@ src/app/
    - File uploads (presigned S3) and conversion worker.
    - Unit/Entry builder, entry registry with TEXT, VIDEO, DOCUMENT, PRESENTATION, LINK/EMBED, AUDIO.
    - Players, progress tracking, release/override logic.
-5. **Assessment**
+5. **Assessment** ✅ *done*
    - Question bank, QUIZ (all question types, attempts, timer, auto + manual grading).
    - ASSIGNMENT with rubrics. Grading queue.
 6. **Annotated documents & entry comments** (PDF anchored threads), FORUM entry.
@@ -483,3 +483,62 @@ src/app/
 - **Tests:**
   - Unit tests for time zones, embeds, rich-text sanitizing, the registry, the outline, range parsing and ordering.
   - E2E tests for building and reordering, publish validation, PowerPoint conversion to slides, the student path through prerequisites and progress (including the teacher roster), class overrides and assistant view-only, class-only units and builder permissions, unit deletion, and course duplication with content.
+
+### Phase 5 decisions
+- **Question types** (`src/features/assessment/questions.ts`, pure):
+  - All 10 types are built: single and multiple choice, true/false, short answer (accepted answers plus optional regex patterns matched against the whole answer), numeric with tolerance (comma decimals accepted), matching, ordering, fill-in-the-blanks (`[[answer|alternative]]`), essay and file upload.
+  - Multiple choice, matching, ordering and fill-in-the-blanks give partial credit. Multiple choice subtracts for wrong picks and never goes below zero.
+  - Essays and file uploads are graded by a teacher.
+- **Question bank:** questions belong to a course. Tags are stored as `,a,b,` so a tag can be matched with LIKE. Prompt images are tracked in `QuestionFile` for access checks.
+- **Quiz structure** lives in the entry's content rather than a QuizQuestion table: `{ settings, items }`.
+  - Items are either fixed questions (with a per-quiz points override) or random draws by tag.
+  - Saving checks that every question belongs to the course.
+  - Settings: time limit, attempts (0 = unlimited), grade from best/last/average, shuffle questions and options, results shown after submitting / after the due date / never, correct answers shown, pass mark, close at the due date, one question per page.
+- **Attempts:**
+  - Starting an attempt freezes the questions, answers included, in `QuizAttempt.snapshot`, which is **server-only**. Students receive `studentView`, with options shuffled by a fixed seed per attempt and question, and ordering questions never shown in the correct order.
+  - Answers are validated by type on every save. Autosave runs every 15 s.
+  - The deadline (time limit, and the due date when "close at due date" is set) is enforced on the server, with 30 s of grace. Expired attempts are submitted automatically whenever a page touches them (`finalizeExpired`). The browser counts down using the server's clock and submits at zero.
+  - Concurrent starts create one attempt: the unique attempt number plus retry on P2002. Verified by `scripts/check-quiz-start.mts`.
+- **Quiz scoring:**
+  - On submit, auto-graded answers get `autoScore` and the attempt becomes GRADED, or NEEDS_GRADING if essays or uploads remain.
+  - A teacher's `manualScore` overrides the automatic score, so teachers can adjust any answer.
+  - The `Grade` row follows the scoring policy over fully graded attempts.
+- **Assignments:**
+  - Content holds instructions (rich text), text and/or file submission, the maximum number of files, whether resubmitting is allowed, and points or a rubric.
+  - Rubrics are stored inline in the assignment (criteria → levels with points). Reusable rubrics are not built yet.
+  - Each resubmission is a new numbered `Submission`. Only the newest ungraded version appears in the grading queue.
+- **Grades** (`Grade`): one per student, entry and class, holding score, max, feedback, rubric selections, grader and `released`.
+  - Assignment grades are hidden from students until released.
+  - Quiz grades follow the quiz's result policy (after the due date hides the score until then).
+  - Weights and categories come with the gradebook (phase 8).
+- **Progress:** submitting a quiz attempt or an assignment marks the entry completed (tracking type "submission").
+- **Student uploads** use `/api/uploads?kind=submission` (STUDENT allowed, 25 MB). Submitted files (`SubmissionFile`, `QuizAnswerFile`) are readable only by the submitting student and that class's staff.
+- **Navigation from actions:** actions that run inside client transitions (start or submit a quiz) return `{ url }` and the client calls `router.push`. Awaiting a redirecting action inside a nested transition never settles.
+
+### Phase 5 deliverables (for reference)
+- **Teacher:**
+  - `/teach/courses/[id]/questions`: bank with search and type/tag filters, duplicate and delete.
+  - Question editor with an answer editor for each type, rich prompt, points, tags, difficulty, explanation and a live student preview.
+  - Quiz editor: items from the bank or random by tag, point overrides, settings.
+  - Assignment editor: instructions, submission options, rubric builder.
+  - `/teach/grading`: queue across classes.
+  - `/teach/grading/attempts/[id]`: answers, correct answers, per-answer score and feedback.
+  - `/teach/grading/submissions/[id]`: text, files, versions, rubric or points, feedback, release.
+  - Class Assessments tab, with results per assessment and student.
+- **Student:**
+  - Quiz panel in the player: summary, attempts, start/resume, limits.
+  - `/learn/classes/[id]/quiz/[attemptId]`: runner with timer, autosave, one-per-page navigation, confirm on submit.
+  - `…/results`: score, pass/fail, each answer, correct answers and explanations when allowed, teacher feedback.
+  - Assignment panel: instructions, rubric, submit and resubmit with files, history, released grade and feedback.
+  - `/learn/grades`.
+- **Seed:** 9 Algebra questions (one of each auto type plus an essay) and Unit 3 with "Unit 1 quiz" (20 min, 2 attempts, pass mark 60%), "Speed check" (1 min, 2 random questions tagged `speed`) and "Word problems" (assignment with a 2-criterion rubric).
+- **Tests:**
+  - Unit tests for every question type (schemas, grading, the student view never leaking answers, seeded shuffles), quiz rules (random resolution, deadlines, limits, scoring policies, visibility, pass mark), rubrics, tags and plain-text excerpts.
+  - E2E tests:
+    - the full quiz: all types answered, then essay graded by a teacher, then the student sees 12.5 / 13 and Passed
+    - the attempt limit
+    - auto-submit of a timed quiz, using Playwright's clock
+    - an assignment with a file, rubric grading, release, file access control and resubmission back into the queue
+    - question bank validation
+    - building a quiz from the bank
+    - grading and attempt access limits

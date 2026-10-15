@@ -19,7 +19,8 @@ export type NavIcon =
   | "folders"
   | "calendar-range"
   | "clipboard"
-  | "search";
+  | "search"
+  | "grading";
 
 export type NavItem = { href: string; label: string; icon: NavIcon };
 export type NavSection = { title: string; items: NavItem[] };
@@ -48,8 +49,14 @@ const AREA_ITEMS: Record<Area, NavItem[]> = {
     { href: "/office/enrollments", label: "Enrollments", icon: "clipboard" },
     { href: "/office/students/import", label: "Import students", icon: "upload" },
   ],
-  teach: [{ href: "/teach", label: "My classes", icon: "graduation" }],
-  learn: [{ href: "/learn", label: "My classes", icon: "book" }],
+  teach: [
+    { href: "/teach", label: "My classes", icon: "graduation" },
+    { href: "/teach/grading", label: "Grading", icon: "grading" },
+  ],
+  learn: [
+    { href: "/learn", label: "My classes", icon: "book" },
+    { href: "/learn/grades", label: "Grades", icon: "grading" },
+  ],
   guardian: [{ href: "/guardian", label: "My students", icon: "users" }],
 };
 
