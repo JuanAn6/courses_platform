@@ -13,7 +13,7 @@
 
 This file holds all the context needed to build it. `CLAUDE.md` at the repo root summarizes the conventions.
 
-**Status:** Phases 1–5 (Foundation, People management, Academic structure, Content engine, Assessment) are done. See §6 for what it includes and §9 for changes from the original plan.
+**Status:** Phases 1–5 (Foundation, People management, Academic structure, Content engine, Assessment) are done and committed. **Phase 6 (annotated documents, entry comments and FORUM) is next.** Its plan is written up in "Phase 6 plan" at the end of §9, but no code has been written for it yet. See §6 for what each phase includes and §9 for changes from the original plan.
 
 **Decisions made with the user:** Next.js full-stack, **MySQL**, single institution, **English-only UI** (strings kept in one place so i18n can be added later), and all four extras: gradebook and certificates, attendance and calendar, messaging and notifications, and payments.
 
@@ -255,7 +255,7 @@ src/app/
 5. **Assessment** ✅ *done*
    - Question bank, QUIZ (all question types, attempts, timer, auto + manual grading).
    - ASSIGNMENT with rubrics. Grading queue.
-6. **Annotated documents & entry comments** (PDF anchored threads), FORUM entry.
+6. **Annotated documents & entry comments** (PDF anchored threads), FORUM entry. ⏳ *next: planned (see "Phase 6 plan" in §9), not started*
 7. **Board**: posts, comments, reactions, scopes, scheduling, moderation, activity-feed generation.
 8. **Gradebook & certificates**: categories/weights, manual items, release, report-card PDF, completion rules, certificate templates, verification page.
 9. **Attendance & calendar**: schedules → sessions, attendance taking, LIVE_SESSION entries, merged calendar, iCal feed.
@@ -542,3 +542,76 @@ src/app/
     - question bank validation
     - building a quiz from the bank
     - grading and attempt access limits
+
+### Phase 6 plan (agreed, not started)
+Scope: entry comments on any content, the `ANNOTATED_DOCUMENT` type (a PDF with anchored threads) and the `FORUM` type (a graded or ungraded discussion). Notifications (phase 10) and the activity feed (phase 7) are out of scope; leave hooks where they will plug in.
+
+- **Data model** (one migration):
+  - `EntryType` gets `ANNOTATED_DOCUMENT` and `FORUM`.
+  - New enum `CommentVisibility`: `CLASS` (everyone in the class) and `PRIVATE_TO_STAFF` (the author and the class staff).
+  - New model `EntryComment`: id, entryId, classId, authorId, parentId?, body (plain text, up to 5,000 characters), anchor JSON?, visibility, resolved, resolvedById?, resolvedAt?, editedAt?, deletedAt?, deletedById?, createdAt, updatedAt.
+    - Indexes: (entryId, classId, createdAt), (classId, resolved), parentId, authorId.
+  - `Entry.commentsEnabled Boolean @default(true)`. The migration sets it to false for existing quizzes, and new quizzes start with it off.
+- **Comment rules** (pure module `src/features/comments/rules.ts`, unit-tested):
+  - Comments belong to a class: classes share course entries, but each class has its own discussion.
+  - Threads have **2 levels**: a root comment plus replies. A reply to a reply is attached to the root. Replies take the root's visibility.
+  - **Who can read:**
+    - `CLASS` comments: the class staff and its students (students only when the outline lets them open the entry).
+    - `PRIVATE_TO_STAFF` comments: the root's author and the class staff.
+  - **Who can write:**
+    - Students go through `requireStudentEntry` (ACTIVE class, unlocked entry). COMPLETED classes are read-only.
+    - Class staff can always write. Guardians and secretaries cannot.
+  - **Editing:** authors edit their own comments (`editedAt` is shown).
+  - **Deleting:** soft delete. A deleted comment that has replies shows "Comment deleted". Staff can delete any comment in their class, and that is audited.
+  - **Resolving:** staff, or the root's author, can mark a thread resolved or reopen it.
+  - Students can ask privately ("Only teachers see this"), which creates a `PRIVATE_TO_STAFF` comment.
+- **Entry comments** (all types except QUIZ by default; FORUM and ANNOTATED_DOCUMENT have their own UI):
+  - A "Comments" section below the player when `commentsEnabled` is on.
+  - The editor's Publishing card gets an "Allow comments" checkbox.
+- **ANNOTATED_DOCUMENT:**
+  - Content: `{ fileId, mode: "shared" | "private" }`, with upload kind `document` (PDF only). It references its file through `EntryFile`, so the existing file access rules apply.
+  - **Anchor:** `{ page, rects: [{ x, y, w, h }] (fractions 0–1 of the page), quote? }`. It is validated with Zod, with at most 20 rects.
+  - **Viewer:**
+    - react-pdf with the text layer on, and highlight overlays drawn from the anchors.
+    - Select text to get a "Comment" popover, or switch on "Draw area" for scanned PDFs (drag a rectangle).
+    - A side panel of threads sorted by page and position, with filters: All / Open / Resolved (plus Mine in shared mode).
+    - Clicking a highlight focuses its thread, and clicking a thread scrolls to its highlight.
+    - Two columns on wide screens (the player widens for this type) and stacked on mobile.
+  - **Modes:**
+    - **shared**: students see each other's threads.
+    - **private**: each student sees only their own threads plus the staff's.
+    - Student roots are forced to `PRIVATE_TO_STAFF`, while staff roots are `CLASS`.
+  - Unanchored comments are allowed ("General" group).
+  - Tracking: manual.
+- **FORUM:**
+  - Content: `{ prompt (rich text, saved through prepareContent), postFirst: boolean, graded: boolean, points }`.
+  - Replies are `EntryComment` rows with the same threading.
+  - **postFirst:** students see only the staff's posts and their own until they post a root.
+  - **Tracking:** a new `"post"` mode, where posting the first root marks the entry completed through `markEntryCompleted`. The completion bar says "Post in the discussion to complete."
+  - **Grading:**
+    - When `graded` is on, FORUM joins `GRADABLE_TYPES` (`isGradable` depends on content).
+    - A teacher scores participation (score up to `points`, feedback, release) in a `Grade` row, from the class's Assessments tab.
+    - The grading queue lists students who have posted and have no grade yet.
+    - `/learn/grades` and the class Assessments tab include graded forums.
+- **Staff pages:**
+  - `/teach/classes/[classId]/entries/[entryId]`: the entry in class context (preview viewer plus comments, annotations or the forum, with staff powers). It is guarded by `requireClassStaff`.
+  - A class **Discussions** tab (`/teach/classes/[classId]/discussions`) lists recent threads across the class's entries. Open and private questions come first, with Open/Resolved/All filters, and each row links to the thread (`#comment-<id>`). Paging is cursor-based.
+  - The class Content outline links each entry to its class view.
+- **Code layout:**
+  - `src/features/comments/`: `schemas.ts`, `rules.ts`, `queries.ts` (returns only what the viewer may read), `actions.ts` (create, edit, delete, resolve), and `components/` (thread list, composer, annotated viewer).
+  - The forum grade action lives in `src/features/assessment/` next to the assignment grading.
+  - Register both types in `registry.ts`, `editors.tsx`, `viewers.tsx` and `entry-icon.tsx`.
+- **Seed:**
+  - Algebra Unit 1 gets an annotated "Worked examples" PDF in shared mode with two threads: a student question with a teacher reply, and a resolved thread.
+  - Unit 3 gets a graded forum, "Where do you use equations?", with postFirst on and one student post.
+  - The "What is an equation?" text entry gets a couple of comments.
+- **Tests:**
+  - Unit tests for the visibility, write, edit, delete and resolve rules, anchor validation, private/shared filtering, postFirst filtering, and the FORUM/ANNOTATED_DOCUMENT registry entries (publish problems, tracking, referenced files).
+  - E2E tests:
+    - a student comments and asks privately, and another student can't see the private question
+    - a teacher replies and resolves from the Discussions tab
+    - annotated document: select text, comment, the teacher replies, and private mode isolates students
+    - a postFirst forum hides posts until the student posts, and posting completes the entry
+    - grading a forum, then the student sees the released grade
+    - a COMPLETED class is read-only, and the entry editor's "Allow comments" toggle works
+- **Docs at the end:** mark phase 6 done in §6, add "Phase 6 decisions/deliverables" here, update the Status line, CLAUDE.md conventions (comments module, new types), `navigation.ts` (nothing new at top level) and the `proxy.ts` matcher if new top-level paths appear.
